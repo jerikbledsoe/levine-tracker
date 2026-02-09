@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Levine Protocol Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f3f4f6; }
+.no-scroll::-webkit-scrollbar { display: none; }
+.no-scroll { scrollbar-width: none; }
+.fade-in { animation: fadeIn 0.2s ease-in; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════
+
+const START = new Date(2026, 1, 16); // Feb 16, 2026
+const STORAGE_KEY = 'levine-tracker-v1';
+
+const W = {
+  push:     { name: 'Push Day',            short: 'Push',     color: '#ED7D31', bg: '#FBE5D6', dur: '~45 min',
+              detail: ['Chest, shoulders, triceps, quads', 'Press, squat, overhead press, extensions', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
+              cue: 'Train to true muscular failure. Maintain strict form — don\'t let your brain cheat the movement.' },
+  pull:     { name: 'Pull Day',            short: 'Pull',     color: '#C47024', bg: '#F5E6D8', dur: '~45 min',
+              detail: ['Back, biceps, hamstrings, rear delts', 'Rows, deadlift/RDL, pulldowns, curls', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
+              cue: 'Squeeze at peak contraction. Feel the target muscle. Override the instinct to recruit helpers.' },
+  '4x4':   { name: 'Norwegian 4×4',       short: '4×4',      color: '#C00000', bg: '#FCEAEA', dur: '~43 min',
+              steps: ['10 min warm-up at 60-70% peak HR', 'Round 1: 4 min WORK → 3 min RECOVERY', 'Round 2: 4 min WORK → 3 min RECOVERY', 'Round 3: 4 min WORK → 3 min RECOVERY', 'Round 4: 4 min WORK', '5 min cool-down at 60-70% peak HR'],
+              cue: 'WORK = target % peak HR (few words only). RECOVERY = 60-75% peak HR (easy conversation).' },
+  base:     { name: 'Base Aerobic',        short: 'Base',     color: '#548235', bg: '#E2EFDA',
+              steps: ['10 min warm-up (easy pace)', 'Continuous aerobic at Talk Test intensity', '10 min cool-down'],
+              cue: 'Talk Test: Can converse, cannot sing. Walk, jog, cycle, swim, elliptical.' },
+  long:     { name: 'Long Endurance',      short: 'Long',     color: '#BF8F00', bg: '#FFF2CC',
+              steps: ['5 min warm-up (easy start)', 'Sustained moderate aerobic activity', '5 min cool-down'],
+              cue: '65-75% peak HR. Full sentences. Hike, cycle, tennis, swim, jog.' },
+  recovery: { name: 'Recovery',            short: 'Rec',      color: '#7030A0', bg: '#F3E8FF', dur: '25 min',
+              detail: ['20-30 min continuous light movement', '60-70% peak HR — should feel effortless', 'Easy walk, light cycling, gentle swim'] },
+  rest:     { name: 'Rest',                short: 'Rest',     color: '#CBD5E1', bg: '#F8FAFC', dur: '' }
+};
+
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+// t = type, w = work minutes, m = total minutes, i = intensity %
+const SP = [
+  { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'push'}, {t:'base',w:30,m:50}, {t:'rest'}, {t:'pull'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'rest'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'rest'} ] },
+  { id:'2a', p:1, n:'Adding Distance',     ws:13, we:16,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'rest'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:45,m:55}, {t:'rest'} ] },
+  { id:'2b', p:1, n:'First Intervals',     ws:17, we:22,  t:[ {t:'push'}, {t:'4x4',i:85}, {t:'recovery'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:50,m:60}, {t:'rest'} ] },
+  { id:'2c', p:1, n:'Pushing Intensity',   ws:23, we:28,  t:[ {t:'push'}, {t:'4x4',i:90}, {t:'recovery'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:55,m:65}, {t:'rest'} ] },
+  { id:'2d', p:1, n:'Ramping Up',          ws:29, we:34,  t:[ {t:'push'}, {t:'4x4',i:92}, {t:'recovery'}, {t:'pull'}, {t:'base',w:45,m:65}, {t:'long',w:60,m:70}, {t:'rest'} ] },
+  { id:'pk', p:2, n:'Two Intervals',       ws:35, we:40,  t:[ {t:'push'}, {t:'4x4',i:95}, {t:'recovery'}, {t:'pull'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'rest'} ] },
+  { id:'mt', p:3, n:'Sustained',           ws:41, we:104, t:[ {t:'push'}, {t:'4x4',i:95}, {t:'recovery'}, {t:'pull'}, {t:'base',w:45,m:65}, {t:'long',w:60,m:70}, {t:'rest'} ] },
+];
+
+const PHASES = [
+  { id:0, name:'Phase 1: Foundation', tab:'Phase 1',      ws:1,  we:12,  color:'#548235', bg:'#E2EFDA' },
+  { id:1, name:'Phase 2: Build',     tab:'Phase 2',      ws:13, we:34,  color:'#BF8F00', bg:'#FFF2CC' },
+  { id:2, name:'Peak',               tab:'Peak',         ws:35, we:40,  color:'#C00000', bg:'#FCEAEA' },
+  { id:3, name:'Maintenance',        tab:'Maintenance',  ws:41, we:104, color:'#2F5496', bg:'#D6E4F0' },
+];
+
+// ════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════
+
+function dateFor(wk, dayIdx) {
+  const d = new Date(START);
+  d.setDate(d.getDate() + (wk - 1) * 7 + dayIdx);
+  return d;
+}
+function dk(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function fmt(d) { return d.toLocaleDateString('en-US', { month:'short', day:'numeric' }); }
+function curWeek() {
+  const diff = Math.floor((new Date() - START) / (7*24*60*60*1000));
+  return Math.max(1, Math.min(104, diff + 1));
+}
+function getSP(wk) { return SP.find(s => wk >= s.ws && wk <= s.we); }
+// Yates deload cycle: 6 weeks hard, 2 weeks submaximal
+function isDeloadWeek(wk) { return ((wk - 1) % 8) >= 6; }
+function sessionsInWeek(wk) {
+  const sp = getSP(wk);
+  return sp ? sp.t.filter(d => d.t !== 'rest').length : 0;
+}
+function weekDates(wk) { return DAYS.map((_,i) => dateFor(wk, i)); }
+function isWeekComplete(wk, completed) {
+  const sp = getSP(wk);
+  if (!sp) return false;
+  return sp.t.every((d, i) => d.t === 'rest' || completed[dk(dateFor(wk, i))]);
+}
+function completedInWeek(wk, completed) {
+  const sp = getSP(wk);
+  if (!sp) return 0;
+  return sp.t.reduce((n, d, i) => n + (d.t !== 'rest' && completed[dk(dateFor(wk, i))] ? 1 : 0), 0);
+}
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+
+// ════════════════════════════════════════
+// COMPONENTS
+// ════════════════════════════════════════
+
+function ProgressBar({ value, max, color='#22c55e', height=8, bg='#e5e7eb', label }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div>
+      {label && <div className="flex justify-between text-xs text-gray-500 mb-1"><span>{label}</span><span>{pct}%</span></div>}
+      <div className="rounded-full overflow-hidden" style={{ height, background: bg }}>
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: pct+'%', background: color }}></div>
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ cw, completed }) {
+  const totalWeeks = 104;
+  const completedWeeks = useMemo(() => {
+    let n = 0;
+    for (let w = 1; w <= Math.min(cw, totalWeeks); w++) if (isWeekComplete(w, completed)) n++;
+    return n;
+  }, [cw, completed]);
+
+  return (
+    <div className="bg-gray-900 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h1 className="text-lg font-bold tracking-wide">LEVINE PROTOCOL</h1>
+            <p className="text-xs text-gray-400">24-Month Heart & Brain Remodeling</p>
+          </div>
+          <div className="text-right">
+            <div className="text-sm font-semibold">Week {cw} of {totalWeeks}</div>
+            <div className="text-xs text-gray-400">{completedWeeks} weeks completed</div>
+          </div>
+        </div>
+        <ProgressBar value={completedWeeks} max={totalWeeks} color="#22c55e" height={6} bg="#374151" />
+      </div>
+    </div>
+  );
+}
+
+function TabNav({ active, onChange }) {
+  const tabs = ['Summary', ...PHASES.map(p => p.tab), 'Lifting Guide'];
+  return (
+    <div className="bg-white border-b sticky top-[76px] z-40 shadow-sm">
+      <div className="max-w-5xl mx-auto flex no-scroll overflow-x-auto">
+        {tabs.map((t, i) => (
+          <button key={t} onClick={() => onChange(i)}
+            className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+              active === i ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>{t}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpand, week }) {
+  const info = W[workout.t];
+  const isRest = workout.t === 'rest';
+  const isPushPull = workout.t === 'push' || workout.t === 'pull';
+  const deload = isPushPull && isDeloadWeek(week);
+  const key = dk(date);
+  const done = !!completed[key];
+  const durStr = workout.w ? `${workout.w}m work / ${workout.m}m total` : (info.dur || '');
+
+  return (
+    <div
+      className={`rounded-xl border transition-all cursor-pointer ${
+        done ? 'border-green-300 shadow-sm' : isRest ? 'border-gray-200' : 'border-gray-200 hover:shadow-md'
+      }`}
+      style={{ background: done ? '#f0fdf4' : info.bg, minHeight: isRest ? 80 : 120 }}
+      onClick={() => !isRest && onExpand(expanded === key ? null : key)}
+    >
+      <div className="p-3">
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <div className="text-xs font-bold text-gray-700">{dayName}</div>
+            <div className="text-[10px] text-gray-400">{fmt(date)}</div>
+          </div>
+          {!isRest && (
+            <button onClick={e => { e.stopPropagation(); onToggle(key); }}
+              className={`w-6 h-6 rounded-md border-2 flex items-center justify-center text-xs font-bold transition-all flex-shrink-0 ${
+                done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-gray-400'
+              }`}>
+              {done && '✓'}
+            </button>
+          )}
+        </div>
+
+        <div className="mt-2">
+          <div className="font-semibold text-sm" style={{ color: done ? '#16a34a' : info.color }}>{info.name}</div>
+          {deload && <div className="text-[10px] font-semibold mt-0.5 text-purple-600">DELOAD WEEK</div>}
+          {workout.t === '4x4' && <div className="text-xs font-medium mt-0.5" style={{ color: info.color }}>{workout.i}% peak HR</div>}
+          {durStr && !deload && <div className="text-[11px] text-gray-500 mt-0.5">{durStr}</div>}
+          {deload && <div className="text-[11px] text-gray-500 mt-0.5">Light / submaximal</div>}
+        </div>
+
+        {expanded === key && !isRest && (
+          <div className="mt-3 pt-3 border-t border-gray-200 fade-in">
+            {deload && (
+              <div className="space-y-1 mb-2 bg-purple-50 rounded-lg p-2">
+                <div className="text-xs text-purple-700 font-semibold">Deload Week — Back Off</div>
+                <div className="text-xs text-purple-600">• Light weight, nowhere near failure</div>
+                <div className="text-xs text-purple-600">• Blood flow and maintenance only</div>
+                <div className="text-xs text-purple-600">• Let your body rebuild before the next push</div>
+              </div>
+            )}
+            {info.steps && (
+              <div className="space-y-1 mb-2">
+                {info.steps.map((s, i) => (
+                  <div key={i} className="text-xs text-gray-600 flex">
+                    <span className="text-gray-400 mr-2 flex-shrink-0">•</span>
+                    <span>{s}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {info.detail && (
+              <div className="space-y-1 mb-2">
+                {info.detail.map((d, i) => (
+                  <div key={i} className="text-xs text-gray-600">• {d}</div>
+                ))}
+              </div>
+            )}
+            {info.cue && <div className="text-[11px] text-gray-500 italic mt-1">{info.cue}</div>}
+          </div>
+        )}
+      </div>
+
+      {!isRest && (
+        <div className="h-1 rounded-b-xl" style={{ background: done ? '#22c55e' : info.color }}></div>
+      )}
+    </div>
+  );
+}
+
+function WeekSelector({ phase, selected, onChange, cw, completed }) {
+  const ref = useRef(null);
+  const weeks = [];
+  for (let w = phase.ws; w <= phase.we; w++) weeks.push(w);
+
+  useEffect(() => {
+    if (ref.current) {
+      const el = ref.current.querySelector(`[data-wk="${selected}"]`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [selected]);
+
+  return (
+    <div ref={ref} className="flex gap-2 overflow-x-auto no-scroll py-3 px-1">
+      {weeks.map(w => {
+        const done = isWeekComplete(w, completed);
+        const isCur = w === cw;
+        const isSel = w === selected;
+        return (
+          <button key={w} data-wk={w} onClick={() => onChange(w)}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              isSel ? 'bg-gray-900 text-white shadow-md' :
+              isCur ? 'bg-gray-200 text-gray-900 ring-2 ring-gray-900' :
+              done ? 'bg-green-100 text-green-700' :
+              'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}>
+            {done && !isSel ? '✓ ' : ''}Wk {w}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PhaseView({ phaseIdx, cw, completed, onToggle }) {
+  const phase = PHASES[phaseIdx];
+  const initWeek = Math.max(phase.ws, Math.min(cw, phase.we));
+  const [selWeek, setSelWeek] = useState(initWeek);
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    setSelWeek(Math.max(phase.ws, Math.min(cw, phase.we)));
+    setExpanded(null);
+  }, [phaseIdx, cw]);
+
+  const sp = getSP(selWeek);
+  const dates = weekDates(selWeek);
+  const done = completedInWeek(selWeek, completed);
+  const total = sessionsInWeek(selWeek);
+  const startD = fmt(dates[0]);
+  const endD = fmt(dates[6]);
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-4">
+      <div className="flex items-center justify-between mb-1">
+        <div>
+          <h2 className="text-lg font-bold" style={{ color: phase.color }}>{phase.name}</h2>
+          {sp && <p className="text-xs text-gray-500">{sp.n} — {startD} – {endD}</p>}
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-semibold">{done}/{total} sessions</div>
+          <div className="text-xs text-gray-400">Week {selWeek}</div>
+        </div>
+      </div>
+
+      <ProgressBar value={done} max={total} color={phase.color} height={6} />
+
+      <WeekSelector phase={phase} selected={selWeek} onChange={w => { setSelWeek(w); setExpanded(null); }} cw={cw} completed={completed} />
+
+      {sp && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 mt-2">
+          {sp.t.map((workout, i) => (
+            <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
+              completed={completed} onToggle={onToggle} expanded={expanded} onExpand={setExpanded} week={selWeek} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummaryView({ cw, completed, setCompleted, onTabChange }) {
+  const [syncMsg, setSyncMsg] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const stats = useMemo(() => {
+    let totalSched = 0, totalDone = 0, streak = 0;
+    const phaseStats = PHASES.map(p => ({ ...p, sched: 0, done: 0, weeksComplete: 0, totalWeeks: p.we - p.ws + 1 }));
+
+    for (let w = 1; w <= 104; w++) {
+      const sess = sessionsInWeek(w);
+      const done = completedInWeek(w, completed);
+      const wComplete = isWeekComplete(w, completed);
+
+      if (w <= cw) { totalSched += sess; totalDone += done; }
+
+      const pi = PHASES.findIndex(p => w >= p.ws && w <= p.we);
+      if (pi >= 0) {
+        phaseStats[pi].sched += sess;
+        phaseStats[pi].done += done;
+        if (wComplete) phaseStats[pi].weeksComplete++;
+      }
+    }
+
+    // Streak: consecutive complete weeks ending at or before current week
+    for (let w = cw; w >= 1; w--) {
+      if (isWeekComplete(w, completed)) streak++;
+      else break;
+    }
+
+    const curPhase = PHASES.find(p => cw >= p.ws && cw <= p.we) || PHASES[0];
+    const curSP = getSP(cw);
+
+    return { totalSched, totalDone, streak, phaseStats, curPhase, curSP };
+  }, [cw, completed]);
+
+  const curDates = weekDates(cw);
+  const curSPData = getSP(cw);
+  const curDone = completedInWeek(cw, completed);
+  const curTotal = sessionsInWeek(cw);
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      {/* Current Status */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Current Status</h2>
+            <p className="text-sm text-gray-500">{stats.curPhase.name} — Week {cw} of 104</p>
+            {stats.curSP && <p className="text-xs text-gray-400">{stats.curSP.n}</p>}
+          </div>
+          <div className="text-right">
+            {stats.streak > 0 && (
+              <div className="inline-flex items-center bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm font-semibold">
+                🔥 {stats.streak} week streak
+              </div>
+            )}
+          </div>
+        </div>
+        <ProgressBar value={stats.totalDone} max={stats.totalSched} color="#22c55e" height={10}
+          label={`${stats.totalDone} of ${stats.totalSched} sessions completed`} />
+      </div>
+
+      {/* This Week */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-gray-900">This Week</h3>
+          <span className="text-sm text-gray-500">{curDone}/{curTotal} sessions</span>
+        </div>
+        {curSPData && (
+          <div className="grid grid-cols-7 gap-2">
+            {curSPData.t.map((workout, i) => {
+              const info = W[workout.t];
+              const done = completed[dk(curDates[i])];
+              const isRest = workout.t === 'rest';
+              return (
+                <div key={i} className="text-center">
+                  <div className="text-[10px] font-medium text-gray-400 mb-1">{DAYS[i]}</div>
+                  <div className={`w-9 h-9 mx-auto rounded-lg flex items-center justify-center text-xs font-bold ${
+                    done ? 'bg-green-500 text-white' : isRest ? 'bg-gray-100 text-gray-300' : 'text-white'
+                  }`} style={!done && !isRest ? { background: info.color } : {}}>
+                    {done ? '✓' : isRest ? '–' : info.short.charAt(0)}
+                  </div>
+                  <div className="text-[9px] text-gray-400 mt-0.5">{info.short}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Phase Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {stats.phaseStats.map((ps, i) => {
+          const isActive = cw >= ps.ws && cw <= ps.we;
+          const isFuture = cw < ps.ws;
+          const pct = ps.sched > 0 ? Math.round((ps.done / ps.sched) * 100) : 0;
+          const status = isFuture ? 'Not Started' : (ps.weeksComplete === ps.totalWeeks ? 'Complete' : 'In Progress');
+
+          return (
+            <div key={i} className={`rounded-2xl p-4 border transition-all cursor-pointer hover:shadow-md ${
+              isActive ? 'ring-2 shadow-sm' : ''
+            }`}
+              style={{
+                background: isActive ? ps.bg : '#fff',
+                borderColor: isActive ? ps.color : '#e5e7eb',
+                ringColor: isActive ? ps.color : undefined,
+              }}
+              onClick={() => onTabChange(i + 1)}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-bold text-sm" style={{ color: ps.color }}>{ps.name}</h4>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  status === 'Complete' ? 'bg-green-100 text-green-700' :
+                  status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
+                  'bg-gray-100 text-gray-500'
+                }`}>{status}</span>
+              </div>
+              <div className="text-xs text-gray-500 mb-2">Weeks {ps.ws}–{ps.we} • {ps.totalWeeks} weeks</div>
+              <ProgressBar value={ps.done} max={ps.sched} color={ps.color} height={6} />
+              <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                <span>{ps.done}/{ps.sched} sessions</span>
+                <span>{ps.weeksComplete}/{ps.totalWeeks} weeks</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Key Numbers */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-3">Study Results (What You're Working Toward)</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { n: '+18%', l: 'VO2 Max Increase' },
+            { n: '+25%', l: 'LV Compliance' },
+            { n: '20 yrs', l: 'Heart Age Reversed' },
+            { n: '< 65', l: 'Window Closes (Age)' },
+          ].map((s, i) => (
+            <div key={i} className="text-center">
+              <div className="text-2xl font-bold text-gray-900">{s.n}</div>
+              <div className="text-xs text-gray-500">{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sync & Data */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-1">Sync Between Devices</h3>
+        <p className="text-xs text-gray-500 mb-3">Export your progress from one device, import on another.</p>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={() => {
+            const data = JSON.stringify(completed);
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(data).then(() => {
+                setSyncMsg('Copied to clipboard! Paste this into Import on your other device.');
+                setTimeout(() => setSyncMsg(''), 4000);
+              });
+            } else {
+              const ta = document.createElement('textarea');
+              ta.value = data; document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+              document.body.removeChild(ta);
+              setSyncMsg('Copied to clipboard!');
+              setTimeout(() => setSyncMsg(''), 4000);
+            }
+          }} className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
+            Export Progress
+          </button>
+          <button onClick={() => setShowImport(!showImport)}
+            className="px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
+            Import Progress
+          </button>
+          <button onClick={() => {
+            if (window.confirm('This will erase all progress. Are you sure?')) {
+              setCompleted({});
+              saveState({});
+              setSyncMsg('Progress reset.');
+              setTimeout(() => setSyncMsg(''), 3000);
+            }
+          }} className="px-4 py-2 bg-white text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors">
+            Reset All
+          </button>
+        </div>
+        {syncMsg && <div className="mt-2 text-sm text-green-600 font-medium fade-in">{syncMsg}</div>}
+        {showImport && (
+          <div className="mt-3 fade-in">
+            <textarea placeholder="Paste exported data here..." value={importText} onChange={e => setImportText(e.target.value)}
+              className="w-full h-20 p-2 border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-gray-300" />
+            <button onClick={() => {
+              try {
+                const parsed = JSON.parse(importText);
+                if (typeof parsed === 'object') {
+                  const merged = { ...completed, ...parsed };
+                  setCompleted(merged);
+                  saveState(merged);
+                  setSyncMsg(`Imported! ${Object.keys(parsed).length} entries merged.`);
+                  setShowImport(false);
+                  setImportText('');
+                  setTimeout(() => setSyncMsg(''), 4000);
+                }
+              } catch { setSyncMsg('Invalid data. Make sure you pasted the full export.'); setTimeout(() => setSyncMsg(''), 4000); }
+            }} className="mt-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 transition-colors">
+              Merge Import
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Source */}
+      <div className="text-center text-xs text-gray-400 pb-4">
+        Based on Levine et al. 2018, <em>Circulation</em> — "Reversing the Cardiac Effects of Sedentary Aging in Middle Age"
+        <br />Supplemented with Louisa Nicola (SMART trial) and Dorian Yates (push/pull split, deload cycling)
+      </div>
+    </div>
+  );
+}
+
+function LiftingGuide() {
+  const warmUpRows = [
+    { set: 'Warm-up 1', pct: '30–40%', reps: '12–15', effort: 'Easy — just get blood flowing', color: '#d1fae5' },
+    { set: 'Warm-up 2', pct: '50–60%', reps: '8–10', effort: 'Comfortable — no grinding', color: '#fef9c3' },
+    { set: 'Warm-up 3', pct: '70–80%', reps: '4–6', effort: 'Smooth — groove the pattern', color: '#fed7aa' },
+    { set: 'Working Set', pct: '100%', reps: '6–10', effort: 'True muscular failure', color: '#fecaca' },
+    { set: 'Drop Set', pct: '~90%', reps: 'To failure', effort: 'Optional — rest 2-3 min first', color: '#e9d5ff' },
+  ];
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 text-white">
+        <h2 className="text-xl font-bold mb-1">Lifting Guide</h2>
+        <p className="text-sm text-gray-300">The Yates Protocol — Your gym reference card</p>
+        <p className="text-xs text-gray-400 mt-1">Based on Dorian Yates (6x Mr. Olympia) via Huberman Lab</p>
+      </div>
+
+      {/* Warm-Up Pyramid */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-1">The Set Pyramid</h3>
+        <p className="text-xs text-gray-500 mb-4">Per exercise — percentages are of your working (top) set weight</p>
+        <div className="space-y-2">
+          {warmUpRows.map((row, i) => (
+            <div key={i} className="rounded-xl p-3 flex items-center gap-3" style={{ background: row.color }}>
+              <div className="w-24 flex-shrink-0">
+                <div className={`text-sm font-bold ${i === 3 ? 'text-red-700' : i === 4 ? 'text-purple-700' : 'text-gray-700'}`}>{row.set}</div>
+              </div>
+              <div className="w-16 flex-shrink-0 text-center">
+                <div className="text-sm font-semibold text-gray-800">{row.pct}</div>
+              </div>
+              <div className="w-14 flex-shrink-0 text-center">
+                <div className="text-sm text-gray-700">{row.reps}</div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-gray-600">{row.effort}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 bg-gray-50 rounded-lg p-3">
+          <div className="text-xs text-gray-500"><strong>Example:</strong> If your working set on bench press is 185 lbs:</div>
+          <div className="text-xs text-gray-500 mt-1">Warm-up 1: ~65 lbs × 12 → Warm-up 2: ~105 lbs × 8 → Warm-up 3: ~145 lbs × 5 → <strong>Working Set: 185 lbs to failure</strong></div>
+        </div>
+      </div>
+
+      {/* Working Set Protocol */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-3">Working Set Protocol</h3>
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-sm font-bold flex-shrink-0">1</div>
+            <div>
+              <div className="text-sm font-semibold text-gray-800">Go to true muscular failure</div>
+              <div className="text-xs text-gray-500">You physically cannot complete another rep with good form</div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">2</div>
+            <div>
+              <div className="text-sm font-semibold text-gray-800">Drop set (optional)</div>
+              <div className="text-xs text-gray-500">Rest 2-3 min, reduce weight ~10%, go to failure again — "hitting the nail in twice"</div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">3</div>
+            <div>
+              <div className="text-sm font-semibold text-gray-800">Didn't nail it? Do another set.</div>
+              <div className="text-xs text-gray-500">"There's no law — if you don't feel you nailed it, do another one."</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Deload Cycle */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-3">Deload Cycle</h3>
+        <div className="flex gap-1 mb-3">
+          {[1,2,3,4,5,6,7,8].map(w => (
+            <div key={w} className={`flex-1 h-8 rounded flex items-center justify-center text-xs font-bold ${
+              w <= 6 ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'
+            }`}>{w <= 6 ? w : 'D'}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-red-50 rounded-lg p-3">
+            <div className="text-sm font-semibold text-red-700">Weeks 1–6: Train Hard</div>
+            <div className="text-xs text-gray-600 mt-1">Full intensity, true failure, progressive overload every session</div>
+          </div>
+          <div className="bg-purple-50 rounded-lg p-3">
+            <div className="text-sm font-semibold text-purple-700">Weeks 7–8: Deload</div>
+            <div className="text-xs text-gray-600 mt-1">Light weight, nowhere near failure, blood flow and maintenance only</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Core Principles */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-3">Core Principles</h3>
+        <div className="space-y-3">
+          {[
+            { title: 'Progressive Overload', desc: 'Add weight or reps every session, even if it\'s just half a pound. The body won\'t change without a reason to.', icon: '↑' },
+            { title: 'Mind-Muscle Connection', desc: 'Feel the target muscle contract. Understand what the muscle does. Light practice sets build this before you load up.', icon: '🧠' },
+            { title: 'Strict Form Always', desc: 'When it gets hard, your brain will try to cheat the movement. Override that instinct. Stay with the form until you can\'t do another rep.', icon: '🎯' },
+            { title: 'Not More Than Necessary', desc: '"Do enough to stimulate but not more than that — this is an overload you have to recover from." Stimulate → Recover → Grow.', icon: '⚖' },
+            { title: 'Write It Down', desc: 'Every workout. Weight, reps, how you felt. If you can\'t see the data, you can\'t know if you\'re progressing.', icon: '📓' },
+          ].map((p, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-base flex-shrink-0">{p.icon}</div>
+              <div>
+                <div className="text-sm font-semibold text-gray-800">{p.title}</div>
+                <div className="text-xs text-gray-500">{p.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Push/Pull Split */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-3">Your Split</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#ED7D31', background: '#FBE5D6' }}>
+            <div className="text-sm font-bold" style={{ color: '#ED7D31' }}>Monday — Push</div>
+            <div className="text-xs text-gray-600 mt-2 space-y-1">
+              <div>Chest (press variations)</div>
+              <div>Shoulders (overhead press)</div>
+              <div>Triceps (extensions)</div>
+              <div>Quads (squat/leg press)</div>
+            </div>
+          </div>
+          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#C47024', background: '#F5E6D8' }}>
+            <div className="text-sm font-bold" style={{ color: '#C47024' }}>Thursday — Pull</div>
+            <div className="text-xs text-gray-600 mt-2 space-y-1">
+              <div>Back (rows, pulldowns)</div>
+              <div>Biceps (curls)</div>
+              <div>Hamstrings (RDL/deadlift)</div>
+              <div>Rear delts</div>
+            </div>
+          </div>
+        </div>
+        <div className="text-xs text-gray-400 mt-3 text-center">Each muscle group hit once directly per week, with indirect overlap between sessions</div>
+      </div>
+
+      {/* Source */}
+      <div className="text-center text-xs text-gray-400 pb-4">
+        Protocol: Dorian Yates via Huberman Lab Podcast — "Blood and Guts" high-intensity training
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState(0);
+  const [completed, setCompleted] = useState(loadState);
+  const cw = curWeek();
+
+  const toggle = useCallback((key) => {
+    setCompleted(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key]; else next[key] = true;
+      saveState(next);
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="min-h-screen pb-8">
+      <TopBar cw={cw} completed={completed} />
+      <TabNav active={tab} onChange={setTab} />
+      {tab === 0 ? (
+        <SummaryView cw={cw} completed={completed} setCompleted={setCompleted} onTabChange={setTab} />
+      ) : tab === 5 ? (
+        <LiftingGuide />
+      ) : (
+        <PhaseView phaseIdx={tab - 1} cw={cw} completed={completed} onToggle={toggle} />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
