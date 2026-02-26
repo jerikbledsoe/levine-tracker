@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f3f4f6; }
@@ -15,12 +16,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .no-scroll { scrollbar-width: none; }
 .fade-in { animation: fadeIn 0.2s ease-in; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.auth-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ════════════════════════════════════════
+// SUPABASE INIT
+// ════════════════════════════════════════
+
+const SUPABASE_URL = 'https://cjcvtkcqbaubyqlijssj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqY3Z0a2NxYmF1YnlxbGlqc3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTg3NDMsImV4cCI6MjA4NzY5NDc0M30.kBZifO9Unx6kLvQ9Lqb-VKA3LDVQ-V9ROd-tLj2L-Jk';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ════════════════════════════════════════
 // DATA
@@ -110,6 +120,67 @@ function loadState() {
 function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
 
 // ════════════════════════════════════════
+// SUPABASE FUNCTIONS
+// ════════════════════════════════════════
+
+async function loadFromSupabase(userId) {
+  try {
+    const { data, error } = await sb
+      .from('completed_days')
+      .select('date_key')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    const result = {};
+    if (data) {
+      data.forEach(row => {
+        result[row.date_key] = true;
+      });
+    }
+    return result;
+  } catch (err) {
+    console.error('Error loading from Supabase:', err);
+    return {};
+  }
+}
+
+async function syncToggle(userId, dateKey, isCompleted) {
+  try {
+    if (isCompleted) {
+      await sb
+        .from('completed_days')
+        .upsert({ user_id: userId, date_key: dateKey }, { onConflict: 'user_id,date_key' });
+    } else {
+      await sb
+        .from('completed_days')
+        .delete()
+        .eq('user_id', userId)
+        .eq('date_key', dateKey);
+    }
+  } catch (err) {
+    console.error('Error syncing toggle:', err);
+  }
+}
+
+async function bulkSync(userId, completed) {
+  try {
+    const rows = Object.keys(completed).map(dateKey => ({
+      user_id: userId,
+      date_key: dateKey
+    }));
+
+    if (rows.length > 0) {
+      await sb
+        .from('completed_days')
+        .upsert(rows, { onConflict: 'user_id,date_key' });
+    }
+  } catch (err) {
+    console.error('Error bulk syncing:', err);
+  }
+}
+
+// ════════════════════════════════════════
 // COMPONENTS
 // ════════════════════════════════════════
 
@@ -125,13 +196,23 @@ function ProgressBar({ value, max, color='#22c55e', height=8, bg='#e5e7eb', labe
   );
 }
 
-function TopBar({ cw, completed }) {
+function TopBar({ cw, completed, user, onSignIn, onSignOut }) {
   const totalWeeks = 104;
   const completedWeeks = useMemo(() => {
     let n = 0;
     for (let w = 1; w <= Math.min(cw, totalWeeks); w++) if (isWeekComplete(w, completed)) n++;
     return n;
   }, [cw, completed]);
+
+  const getUserInitial = () => {
+    if (user?.user_metadata?.name) {
+      return user.user_metadata.name.charAt(0).toUpperCase();
+    }
+    if (user?.email) {
+      return user.email.charAt(0).toUpperCase();
+    }
+    return '?';
+  };
 
   return (
     <div className="bg-gray-900 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
@@ -141,9 +222,25 @@ function TopBar({ cw, completed }) {
             <h1 className="text-lg font-bold tracking-wide">LEVINE PROTOCOL</h1>
             <p className="text-xs text-gray-400">24-Month Heart & Brain Remodeling</p>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-semibold">Week {cw} of {totalWeeks}</div>
-            <div className="text-xs text-gray-400">{completedWeeks} weeks completed</div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm font-semibold">Week {cw} of {totalWeeks}</div>
+              <div className="text-xs text-gray-400">{completedWeeks} weeks completed</div>
+            </div>
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="auth-avatar">{getUserInitial()}</div>
+                <button onClick={onSignOut}
+                  className="text-xs px-2 py-1 rounded border border-gray-600 hover:border-gray-400 transition-colors">
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button onClick={onSignIn}
+                className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 transition-colors font-medium">
+                Sign in
+              </button>
+            )}
           </div>
         </div>
         <ProgressBar value={completedWeeks} max={totalWeeks} color="#22c55e" height={6} bg="#374151" />
@@ -329,10 +426,11 @@ function PhaseView({ phaseIdx, cw, completed, onToggle }) {
   );
 }
 
-function SummaryView({ cw, completed, setCompleted, onTabChange }) {
+function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn, onSignOut }) {
   const [syncMsg, setSyncMsg] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
+  const [showManualSync, setShowManualSync] = useState(false);
   const stats = useMemo(() => {
     let totalSched = 0, totalDone = 0, streak = 0;
     const phaseStats = PHASES.map(p => ({ ...p, sched: 0, done: 0, weeksComplete: 0, totalWeeks: p.we - p.ws + 1 }));
@@ -477,62 +575,106 @@ function SummaryView({ cw, completed, setCompleted, onTabChange }) {
 
       {/* Sync & Data */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border">
-        <h3 className="font-bold text-gray-900 mb-1">Sync Between Devices</h3>
-        <p className="text-xs text-gray-500 mb-3">Export your progress from one device, import on another.</p>
-        <div className="flex gap-3 flex-wrap">
-          <button onClick={() => {
-            const data = JSON.stringify(completed);
-            if (navigator.clipboard) {
-              navigator.clipboard.writeText(data).then(() => {
-                setSyncMsg('Copied to clipboard! Paste this into Import on your other device.');
-                setTimeout(() => setSyncMsg(''), 4000);
-              });
-            } else {
-              const ta = document.createElement('textarea');
-              ta.value = data; document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-              document.body.removeChild(ta);
-              setSyncMsg('Copied to clipboard!');
-              setTimeout(() => setSyncMsg(''), 4000);
-            }
-          }} className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
-            Export Progress
-          </button>
-          <button onClick={() => setShowImport(!showImport)}
-            className="px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
-            Import Progress
-          </button>
-          <button onClick={() => {
-            if (window.confirm('This will erase all progress. Are you sure?')) {
-              setCompleted({});
-              saveState({});
-              setSyncMsg('Progress reset.');
-              setTimeout(() => setSyncMsg(''), 3000);
-            }
-          }} className="px-4 py-2 bg-white text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors">
-            Reset All
-          </button>
-        </div>
-        {syncMsg && <div className="mt-2 text-sm text-green-600 font-medium fade-in">{syncMsg}</div>}
-        {showImport && (
-          <div className="mt-3 fade-in">
-            <textarea placeholder="Paste exported data here..." value={importText} onChange={e => setImportText(e.target.value)}
-              className="w-full h-20 p-2 border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-gray-300" />
-            <button onClick={() => {
-              try {
-                const parsed = JSON.parse(importText);
-                if (typeof parsed === 'object') {
-                  const merged = { ...completed, ...parsed };
-                  setCompleted(merged);
-                  saveState(merged);
-                  setSyncMsg(`Imported! ${Object.keys(parsed).length} entries merged.`);
-                  setShowImport(false);
-                  setImportText('');
+        {user ? (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold text-gray-900">Cloud Sync Status</h3>
+                <p className="text-xs text-gray-500">{user.email}</p>
+              </div>
+              <div className="text-green-600 font-semibold text-sm">Synced to cloud ✓</div>
+            </div>
+            <div className="mb-3 bg-green-50 border border-green-200 rounded-lg p-3">
+              <p className="text-xs text-green-700">Your progress is automatically synced across all your devices.</p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={onSignOut}
+                className="px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
+                Sign out
+              </button>
+              <button onClick={() => setShowManualSync(!showManualSync)}
+                className="px-4 py-2 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
+                {showManualSync ? 'Hide' : 'Show'} Manual Options
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 className="font-bold text-gray-900 mb-2">Sync Between Devices</h3>
+            <p className="text-xs text-gray-500 mb-4">Sign in with Google to sync your progress automatically across devices.</p>
+            <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <button onClick={onSignIn}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 transition-colors w-full">
+                Sign in with Google
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Or use manual options below:</p>
+            <button onClick={() => setShowManualSync(!showManualSync)}
+              className="text-xs text-gray-600 font-medium hover:text-gray-900 mb-3">
+              {showManualSync ? 'Hide' : 'Show'} Export/Import/Reset
+            </button>
+          </>
+        )}
+
+        {showManualSync && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-xs text-gray-500 mb-3">Export your progress from one device, import on another.</p>
+            <div className="flex gap-3 flex-wrap">
+              <button onClick={() => {
+                const data = JSON.stringify(completed);
+                if (navigator.clipboard) {
+                  navigator.clipboard.writeText(data).then(() => {
+                    setSyncMsg('Copied to clipboard! Paste this into Import on your other device.');
+                    setTimeout(() => setSyncMsg(''), 4000);
+                  });
+                } else {
+                  const ta = document.createElement('textarea');
+                  ta.value = data; document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+                  document.body.removeChild(ta);
+                  setSyncMsg('Copied to clipboard!');
                   setTimeout(() => setSyncMsg(''), 4000);
                 }
-              } catch { setSyncMsg('Invalid data. Make sure you pasted the full export.'); setTimeout(() => setSyncMsg(''), 4000); }
-            }} className="mt-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 transition-colors">
-              Merge Import
-            </button>
+              }} className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
+                Export Progress
+              </button>
+              <button onClick={() => setShowImport(!showImport)}
+                className="px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
+                Import Progress
+              </button>
+              <button onClick={() => {
+                if (window.confirm('This will erase all progress. Are you sure?')) {
+                  setCompleted({});
+                  saveState({});
+                  setSyncMsg('Progress reset.');
+                  setTimeout(() => setSyncMsg(''), 3000);
+                }
+              }} className="px-4 py-2 bg-white text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 transition-colors">
+                Reset All
+              </button>
+            </div>
+            {syncMsg && <div className="mt-2 text-sm text-green-600 font-medium fade-in">{syncMsg}</div>}
+            {showImport && (
+              <div className="mt-3 fade-in">
+                <textarea placeholder="Paste exported data here..." value={importText} onChange={e => setImportText(e.target.value)}
+                  className="w-full h-20 p-2 border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-gray-300" />
+                <button onClick={() => {
+                  try {
+                    const parsed = JSON.parse(importText);
+                    if (typeof parsed === 'object') {
+                      const merged = { ...completed, ...parsed };
+                      setCompleted(merged);
+                      saveState(merged);
+                      setSyncMsg(`Imported! ${Object.keys(parsed).length} entries merged.`);
+                      setShowImport(false);
+                      setImportText('');
+                      setTimeout(() => setSyncMsg(''), 4000);
+                    }
+                  } catch { setSyncMsg('Invalid data. Make sure you pasted the full export.'); setTimeout(() => setSyncMsg(''), 4000); }
+                }} className="mt-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-500 transition-colors">
+                  Merge Import
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -701,23 +843,109 @@ function LiftingGuide() {
 function App() {
   const [tab, setTab] = useState(0);
   const [completed, setCompleted] = useState(loadState);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const cw = curWeek();
+
+  // Auth state management
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        // Get existing session
+        const { data: { session } } = await sb.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          // Load from Supabase and merge with localStorage
+          const supabaseData = await loadFromSupabase(session.user.id);
+          const merged = { ...completed, ...supabaseData };
+          setCompleted(merged);
+          saveState(merged);
+          // Bulk sync any missing localStorage entries to Supabase
+          await bulkSync(session.user.id, merged);
+        }
+      } catch (err) {
+        console.error('Error initializing auth:', err);
+      } finally {
+        setAuthLoading(false);
+      }
+
+      // Listen for auth changes
+      const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          setUser(session.user);
+          // Load from Supabase on sign in
+          const supabaseData = await loadFromSupabase(session.user.id);
+          const merged = { ...completed, ...supabaseData };
+          setCompleted(merged);
+          saveState(merged);
+          await bulkSync(session.user.id, merged);
+        } else {
+          setUser(null);
+        }
+      });
+
+      return () => subscription?.unsubscribe();
+    };
+
+    initAuth();
+  }, []);
 
   const toggle = useCallback((key) => {
     setCompleted(prev => {
       const next = { ...prev };
+      const isCompleted = !next[key];
       if (next[key]) delete next[key]; else next[key] = true;
       saveState(next);
+
+      // Sync to Supabase if user is signed in
+      if (user) {
+        syncToggle(user.id, key, isCompleted);
+      }
+
       return next;
     });
-  }, []);
+  }, [user]);
+
+  const handleSignIn = async () => {
+    try {
+      const redirectUrl = window.location.origin + window.location.pathname;
+      await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl
+        }
+      });
+    } catch (err) {
+      console.error('Sign in error:', err);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await sb.auth.signOut();
+      setUser(null);
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="text-lg font-semibold text-gray-900 mb-2">Levine Protocol Tracker</div>
+          <div className="text-sm text-gray-500">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-8">
-      <TopBar cw={cw} completed={completed} />
+      <TopBar cw={cw} completed={completed} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
       <TabNav active={tab} onChange={setTab} />
       {tab === 0 ? (
-        <SummaryView cw={cw} completed={completed} setCompleted={setCompleted} onTabChange={setTab} />
+        <SummaryView cw={cw} completed={completed} setCompleted={setCompleted} onTabChange={setTab} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
       ) : tab === 5 ? (
         <LiftingGuide />
       ) : (
