@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f3f4f6; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #d1d5db; }
 .no-scroll::-webkit-scrollbar { display: none; }
 .no-scroll { scrollbar-width: none; }
 .fade-in { animation: fadeIn 0.2s ease-in; }
@@ -40,19 +40,19 @@ const START = new Date(2026, 2, 2); // Mar 2, 2026
 const STORAGE_KEY = 'levine-tracker-v1';
 
 const W = {
-  push:     { name: 'Push Day',            short: 'Push',     color: '#ED7D31', bg: '#FBE5D6', dur: '~45 min',
+  push:     { name: 'Push Day',            short: 'Push',     color: '#2563EB', bg: '#DBEAFE', dur: '~45 min',
               detail: ['Chest, shoulders, triceps, quads', 'Press, squat, overhead press, extensions', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
               cue: 'Train to true muscular failure. Maintain strict form — don\'t let your brain cheat the movement.' },
-  pull:     { name: 'Pull Day',            short: 'Pull',     color: '#C47024', bg: '#F5E6D8', dur: '~45 min',
+  pull:     { name: 'Pull Day',            short: 'Pull',     color: '#2563EB', bg: '#DBEAFE', dur: '~45 min',
               detail: ['Back, biceps, hamstrings, rear delts', 'Rows, deadlift/RDL, pulldowns, curls', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
               cue: 'Squeeze at peak contraction. Feel the target muscle. Override the instinct to recruit helpers.' },
   '4x4':   { name: 'Norwegian 4×4',       short: '4×4',      color: '#C00000', bg: '#FCEAEA', dur: '~43 min',
               steps: ['10 min warm-up at 60-70% peak HR', 'Round 1: 4 min WORK → 3 min RECOVERY', 'Round 2: 4 min WORK → 3 min RECOVERY', 'Round 3: 4 min WORK → 3 min RECOVERY', 'Round 4: 4 min WORK', '5 min cool-down at 60-70% peak HR'],
               cue: 'WORK = target % peak HR (few words only). RECOVERY = 60-75% peak HR (easy conversation).' },
-  base:     { name: 'Base Aerobic',        short: 'Base',     color: '#548235', bg: '#E2EFDA',
+  base:     { name: 'Base Aerobic',        short: 'Base',     color: '#0D9488', bg: '#CCFBF1',
               steps: ['10 min warm-up (easy pace)', 'Continuous aerobic at Talk Test intensity', '10 min cool-down'],
               cue: 'Talk Test: Can converse, cannot sing. Walk, jog, cycle, swim, elliptical.' },
-  long:     { name: 'Long Endurance',      short: 'Long',     color: '#BF8F00', bg: '#FFF2CC',
+  long:     { name: 'Long Endurance',      short: 'Long',     color: '#D97706', bg: '#FEF3C7',
               steps: ['5 min warm-up (easy start)', 'Sustained moderate aerobic activity', '5 min cool-down'],
               cue: '65-75% peak HR. Full sentences. Hike, cycle, tennis, swim, jog.' },
   recovery: { name: 'Recovery',            short: 'Rec',      color: '#7030A0', bg: '#F3E8FF', dur: '25 min',
@@ -63,22 +63,23 @@ const W = {
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // t = type, w = work minutes, m = total minutes, i = intensity %
+// Day order: Mon=Push, Tue=Base/4x4, Wed=Base→Long, Thu=Pull, Fri=REST, Sat=Base, Sun=REST
 const SP = [
-  { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'push'}, {t:'base',w:30,m:50}, {t:'rest'}, {t:'pull'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'rest'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'rest'} ] },
-  { id:'2a', p:1, n:'Adding Distance',     ws:13, we:16,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'rest'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:45,m:55}, {t:'rest'} ] },
-  { id:'2b', p:1, n:'First Intervals',     ws:17, we:22,  t:[ {t:'push'}, {t:'4x4',i:85}, {t:'recovery'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:50,m:60}, {t:'rest'} ] },
-  { id:'2c', p:1, n:'Pushing Intensity',   ws:23, we:28,  t:[ {t:'push'}, {t:'4x4',i:90}, {t:'recovery'}, {t:'pull'}, {t:'base',w:40,m:60}, {t:'long',w:55,m:65}, {t:'rest'} ] },
-  { id:'2d', p:1, n:'Ramping Up',          ws:29, we:34,  t:[ {t:'push'}, {t:'4x4',i:92}, {t:'recovery'}, {t:'pull'}, {t:'base',w:45,m:65}, {t:'long',w:60,m:70}, {t:'rest'} ] },
-  { id:'pk', p:2, n:'Two Intervals',       ws:35, we:40,  t:[ {t:'push'}, {t:'4x4',i:95}, {t:'recovery'}, {t:'pull'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'rest'} ] },
-  { id:'mt', p:3, n:'Sustained',           ws:41, we:104, t:[ {t:'push'}, {t:'4x4',i:95}, {t:'recovery'}, {t:'pull'}, {t:'base',w:45,m:65}, {t:'long',w:60,m:70}, {t:'rest'} ] },
+  { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'push'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2a', p:1, n:'Adding Distance',     ws:13, we:16,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'long',w:45,m:55}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2b', p:1, n:'First Intervals',     ws:17, we:22,  t:[ {t:'push'}, {t:'4x4',i:85}, {t:'long',w:50,m:60}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2c', p:1, n:'Pushing Intensity',   ws:23, we:28,  t:[ {t:'push'}, {t:'4x4',i:90}, {t:'long',w:55,m:65}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2d', p:1, n:'Ramping Up',          ws:29, we:34,  t:[ {t:'push'}, {t:'4x4',i:92}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'pk', p:2, n:'Two Intervals',       ws:35, we:40,  t:[ {t:'push'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'4x4',i:95}, {t:'rest'} ] },
+  { id:'mt', p:3, n:'Sustained',           ws:41, we:104, t:[ {t:'push'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'base',w:45,m:65}, {t:'rest'} ] },
 ];
 
 const PHASES = [
-  { id:0, name:'Phase 1: Foundation', tab:'Phase 1',      ws:1,  we:12,  color:'#548235', bg:'#E2EFDA' },
-  { id:1, name:'Phase 2: Build',     tab:'Phase 2',      ws:13, we:34,  color:'#BF8F00', bg:'#FFF2CC' },
-  { id:2, name:'Peak',               tab:'Peak',         ws:35, we:40,  color:'#C00000', bg:'#FCEAEA' },
-  { id:3, name:'Maintenance',        tab:'Maintenance',  ws:41, we:104, color:'#2F5496', bg:'#D6E4F0' },
+  { id:0, name:'Phase 1: Foundation', tab:'Phase 1',      ws:1,  we:12,  color:'#1E3A5F', bg:'#E2E8F0' },
+  { id:1, name:'Phase 2: Build',     tab:'Phase 2',      ws:13, we:34,  color:'#C2410C', bg:'#FFF7ED' },
+  { id:2, name:'Peak',               tab:'Peak',         ws:35, we:40,  color:'#B91C1C', bg:'#FEE2E2' },
+  { id:3, name:'Maintenance',        tab:'Maintenance',  ws:41, we:104, color:'#334155', bg:'#F1F5F9' },
 ];
 
 // ════════════════════════════════════════
@@ -810,17 +811,18 @@ function LiftingGuide() {
       <div className="bg-white rounded-2xl p-5 shadow-sm border">
         <h3 className="font-bold text-gray-900 mb-3">Your Split</h3>
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#ED7D31', background: '#FBE5D6' }}>
-            <div className="text-sm font-bold" style={{ color: '#ED7D31' }}>Monday — Push</div>
+          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#2563EB', background: '#DBEAFE' }}>
+            <div className="text-sm font-bold" style={{ color: '#2563EB' }}>Monday — Push</div>
             <div className="text-xs text-gray-600 mt-2 space-y-1">
               <div>Chest (press variations)</div>
               <div>Shoulders (overhead press)</div>
               <div>Triceps (extensions)</div>
               <div>Quads (squat/leg press)</div>
+              <div>Calves</div>
             </div>
           </div>
-          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#C47024', background: '#F5E6D8' }}>
-            <div className="text-sm font-bold" style={{ color: '#C47024' }}>Thursday — Pull</div>
+          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#2563EB', background: '#DBEAFE' }}>
+            <div className="text-sm font-bold" style={{ color: '#2563EB' }}>Thursday — Pull</div>
             <div className="text-xs text-gray-600 mt-2 space-y-1">
               <div>Back (rows, pulldowns)</div>
               <div>Biceps (curls)</div>
