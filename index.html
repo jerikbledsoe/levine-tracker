@@ -269,8 +269,8 @@ function TabNav({ active, onChange }) {
 function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpand, week }) {
   const info = W[workout.t];
   const isRest = workout.t === 'rest';
-  const isPushPull = workout.t === 'push' || workout.t === 'pull';
-  const deload = isPushPull && isDeloadWeek(week);
+  const isStrength = workout.t === 'strengthA' || workout.t === 'strengthB';
+  const deload = isStrength && isDeloadWeek(week);
   const key = dk(date);
   const done = !!completed[key];
   const durStr = workout.w ? `${workout.w}m work / ${workout.m}m total` : (info.dur || '');
