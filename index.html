@@ -40,12 +40,12 @@ const START = new Date(2026, 2, 2); // Mar 2, 2026
 const STORAGE_KEY = 'levine-tracker-v1';
 
 const W = {
-  push:     { name: 'Push Day',            short: 'Push',     color: '#2563EB', bg: '#DBEAFE', dur: '~45 min',
-              detail: ['Chest, shoulders, triceps, quads', 'Press, squat, overhead press, extensions', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
-              cue: 'Train to true muscular failure. Maintain strict form — don\'t let your brain cheat the movement.' },
-  pull:     { name: 'Pull Day',            short: 'Pull',     color: '#2563EB', bg: '#DBEAFE', dur: '~45 min',
-              detail: ['Back, biceps, hamstrings, rear delts', 'Rows, deadlift/RDL, pulldowns, curls', '1 working set to failure per exercise (10% drop set optional)', 'Progressive overload: add weight or reps each session'],
-              cue: 'Squeeze at peak contraction. Feel the target muscle. Override the instinct to recruit helpers.' },
+  strengthA: { name: 'Strength A',         short: 'Str A',    color: '#1D4ED8', bg: '#DBEAFE', dur: '~45-60 min',
+              detail: ['Full body: squat, hinge, push, pull, shoulders, arms', 'Goblet squat, DB RDL, ring push-ups, ring rows, OHP', '1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Mike-style warm-up: easy reps → half weight → feel set'],
+              cue: 'Stop 1-2 reps shy of failure. Feel the muscle, control the weight, progress over months.' },
+  strengthB: { name: 'Strength B',         short: 'Str B',    color: '#93C5FD', bg: '#EFF6FF', dur: '~45-60 min',
+              detail: ['Full body: lunge, hinge, push, pull, shoulders, arms', 'Reverse lunges, Nordics, DB bench, pull-ups, laterals', '1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Mike-style warm-up: easy reps → half weight → feel set'],
+              cue: 'Same intensity as Day A. Different exercises, same pattern slots, same effort.' },
   '4x4':   { name: 'Norwegian 4×4',       short: '4×4',      color: '#C00000', bg: '#FCEAEA', dur: '~43 min',
               steps: ['10 min warm-up at 60-70% peak HR', 'Round 1: 4 min WORK → 3 min RECOVERY', 'Round 2: 4 min WORK → 3 min RECOVERY', 'Round 3: 4 min WORK → 3 min RECOVERY', 'Round 4: 4 min WORK', '5 min cool-down at 60-70% peak HR'],
               cue: 'WORK = target % peak HR (few words only). RECOVERY = 60-75% peak HR (easy conversation).' },
@@ -63,16 +63,16 @@ const W = {
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // t = type, w = work minutes, m = total minutes, i = intensity %
-// Day order: Mon=Push, Tue=Base/4x4, Wed=Base→Long, Thu=Pull, Fri=REST, Sat=Base, Sun=REST
+// Day order: Mon=StrengthA, Tue=Base/4x4, Wed=Base→Long, Thu=StrengthB, Fri=REST, Sat=Base, Sun=REST
 const SP = [
-  { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'push'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'2a', p:1, n:'Adding Distance',     ws:13, we:16,  t:[ {t:'push'}, {t:'base',w:40,m:60}, {t:'long',w:45,m:55}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'2b', p:1, n:'First Intervals',     ws:17, we:22,  t:[ {t:'push'}, {t:'4x4',i:85}, {t:'long',w:50,m:60}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'2c', p:1, n:'Pushing Intensity',   ws:23, we:28,  t:[ {t:'push'}, {t:'4x4',i:90}, {t:'long',w:55,m:65}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'2d', p:1, n:'Ramping Up',          ws:29, we:34,  t:[ {t:'push'}, {t:'4x4',i:92}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
-  { id:'pk', p:2, n:'Two Intervals',       ws:35, we:40,  t:[ {t:'push'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'4x4',i:95}, {t:'rest'} ] },
-  { id:'mt', p:3, n:'Sustained',           ws:41, we:104, t:[ {t:'push'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'pull'}, {t:'rest'}, {t:'base',w:45,m:65}, {t:'rest'} ] },
+  { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'strengthA'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'strengthA'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2a', p:1, n:'Adding Distance',     ws:13, we:16,  t:[ {t:'strengthA'}, {t:'base',w:40,m:60}, {t:'long',w:45,m:55}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2b', p:1, n:'First Intervals',     ws:17, we:22,  t:[ {t:'strengthA'}, {t:'4x4',i:85}, {t:'long',w:50,m:60}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2c', p:1, n:'Pushing Intensity',   ws:23, we:28,  t:[ {t:'strengthA'}, {t:'4x4',i:90}, {t:'long',w:55,m:65}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'2d', p:1, n:'Ramping Up',          ws:29, we:34,  t:[ {t:'strengthA'}, {t:'4x4',i:92}, {t:'long',w:60,m:70}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
+  { id:'pk', p:2, n:'Two Intervals',       ws:35, we:40,  t:[ {t:'strengthA'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'strengthB'}, {t:'rest'}, {t:'4x4',i:95}, {t:'rest'} ] },
+  { id:'mt', p:3, n:'Sustained',           ws:41, we:104, t:[ {t:'strengthA'}, {t:'4x4',i:95}, {t:'long',w:60,m:70}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:45,m:65}, {t:'rest'} ] },
 ];
 
 const PHASES = [
@@ -683,7 +683,7 @@ function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn,
       {/* Source */}
       <div className="text-center text-xs text-gray-400 pb-4">
         Based on Levine et al. 2018, <em>Circulation</em> — "Reversing the Cardiac Effects of Sedentary Aging in Middle Age"
-        <br />Supplemented with Louisa Nicola (SMART trial) and Dorian Yates (push/pull split, deload cycling)
+        <br />Supplemented with Louisa Nicola (SMART trial) and Mike Israetel (full-body 2×/week, RIR-based training)
       </div>
     </div>
   );
@@ -691,11 +691,24 @@ function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn,
 
 function LiftingGuide() {
   const warmUpRows = [
-    { set: 'Warm-up 1', pct: '30–40%', reps: '12–15', effort: 'Easy — just get blood flowing', color: '#d1fae5' },
-    { set: 'Warm-up 2', pct: '50–60%', reps: '8–10', effort: 'Comfortable — no grinding', color: '#fef9c3' },
-    { set: 'Warm-up 3', pct: '70–80%', reps: '4–6', effort: 'Smooth — groove the pattern', color: '#fed7aa' },
-    { set: 'Working Set', pct: '100%', reps: '6–10', effort: 'True muscular failure', color: '#fecaca' },
-    { set: 'Drop Set', pct: '~90%', reps: 'To failure', effort: 'Optional — rest 2-3 min first', color: '#e9d5ff' },
+    { set: 'Set 1', pct: 'Very light', reps: '~10', effort: 'Easy — bodyweight or lightest option', color: '#d1fae5' },
+    { set: 'Set 2', pct: '~50%', reps: '5–8', effort: 'Moderate — half your working weight', color: '#fef9c3' },
+    { set: 'Feel Set', pct: '~100%', reps: '2–4', effort: 'Working weight — groove the pattern, don\'t fatigue', color: '#fed7aa' },
+    { set: 'Work Set 1', pct: '100%', reps: '6–12', effort: 'RIR 1–2: stop 1–2 reps shy of failure', color: '#DBEAFE' },
+    { set: 'Work Set 2', pct: '100%', reps: '6–12', effort: 'Optional — if first set felt great, do another', color: '#EFF6FF' },
+  ];
+
+  const templateRows = [
+    { pattern: 'Squat/Lunge', dayA: 'Goblet Squat', dayB: 'Reverse Lunges' },
+    { pattern: 'Hinge', dayA: 'DB RDL', dayB: 'Nordics / Hip Thrust' },
+    { pattern: 'Push', dayA: 'Ring Push-Ups', dayB: 'DB Bench Press' },
+    { pattern: 'Pull', dayA: 'Ring Rows', dayB: 'Pull-Ups' },
+    { pattern: 'Shoulders', dayA: 'DB Overhead Press', dayB: 'DB Lateral Raises' },
+    { pattern: 'Rear Delts', dayA: 'Band Pull-Aparts', dayB: 'Band Pull-Aparts' },
+    { pattern: 'Triceps', dayA: 'Band Pushdowns', dayB: 'DB Overhead Extension' },
+    { pattern: 'Biceps', dayA: 'DB Hammer Curls', dayB: 'DB Curls' },
+    { pattern: 'Calves', dayA: 'Standing Calf Raises', dayB: 'Seated Calf Raises' },
+    { pattern: 'Core', dayA: 'Core Rotisserie', dayB: 'Core Rotisserie' },
   ];
 
   return (
@@ -703,19 +716,46 @@ function LiftingGuide() {
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 text-white">
         <h2 className="text-xl font-bold mb-1">Lifting Guide</h2>
-        <p className="text-sm text-gray-300">The Yates Protocol — Your gym reference card</p>
-        <p className="text-xs text-gray-400 mt-1">Based on Dorian Yates (6x Mr. Olympia) via Huberman Lab</p>
+        <p className="text-sm text-gray-300">Full-Body 2×/Week — Pattern-Based Training</p>
+        <p className="text-xs text-gray-400 mt-1">Based on Mike Israetel principles: frequency, volume, RIR-based effort</p>
       </div>
 
-      {/* Warm-Up Pyramid */}
+      {/* Template Table */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border">
-        <h3 className="font-bold text-gray-900 mb-1">The Set Pyramid</h3>
-        <p className="text-xs text-gray-500 mb-4">Per exercise — percentages are of your working (top) set weight</p>
+        <h3 className="font-bold text-gray-900 mb-1">Your Default Template</h3>
+        <p className="text-xs text-gray-500 mb-4">Same pattern slots every session. Different exercises Day A vs Day B.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="text-left p-2 rounded-tl-lg text-white text-xs font-bold" style={{ background: '#1B3A5C' }}>Pattern</th>
+                <th className="text-center p-2 text-white text-xs font-bold" style={{ background: '#1D4ED8' }}>Day A — Monday</th>
+                <th className="text-center p-2 rounded-tr-lg text-white text-xs font-bold" style={{ background: '#93C5FD', color: '#1e3a8a' }}>Day B — Thursday</th>
+              </tr>
+            </thead>
+            <tbody>
+              {templateRows.map((row, i) => (
+                <tr key={i} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                  <td className="p-2 text-xs font-semibold text-gray-800">{row.pattern}</td>
+                  <td className="p-2 text-xs text-gray-600 text-center">{row.dayA}</td>
+                  <td className="p-2 text-xs text-gray-600 text-center">{row.dayB}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="text-xs text-gray-400 mt-3 text-center">Every muscle trained 2×/week across both sessions. Swap exercises from your full menu when needed.</div>
+      </div>
+
+      {/* Warm-Up Protocol */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border">
+        <h3 className="font-bold text-gray-900 mb-1">Warm-Up Protocol (First Lift Only)</h3>
+        <p className="text-xs text-gray-500 mb-4">For later exercises, just do 1 quick feel set (2–4 easy reps) then go into work sets.</p>
         <div className="space-y-2">
           {warmUpRows.map((row, i) => (
             <div key={i} className="rounded-xl p-3 flex items-center gap-3" style={{ background: row.color }}>
               <div className="w-24 flex-shrink-0">
-                <div className={`text-sm font-bold ${i === 3 ? 'text-red-700' : i === 4 ? 'text-purple-700' : 'text-gray-700'}`}>{row.set}</div>
+                <div className={`text-sm font-bold ${i >= 3 ? 'text-blue-700' : 'text-gray-700'}`}>{row.set}</div>
               </div>
               <div className="w-16 flex-shrink-0 text-center">
                 <div className="text-sm font-semibold text-gray-800">{row.pct}</div>
@@ -729,35 +769,31 @@ function LiftingGuide() {
             </div>
           ))}
         </div>
-        <div className="mt-3 bg-gray-50 rounded-lg p-3">
-          <div className="text-xs text-gray-500"><strong>Example:</strong> If your working set on bench press is 185 lbs:</div>
-          <div className="text-xs text-gray-500 mt-1">Warm-up 1: ~65 lbs × 12 → Warm-up 2: ~105 lbs × 8 → Warm-up 3: ~145 lbs × 5 → <strong>Working Set: 185 lbs to failure</strong></div>
-        </div>
       </div>
 
-      {/* Working Set Protocol */}
+      {/* Work Set Protocol */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border">
-        <h3 className="font-bold text-gray-900 mb-3">Working Set Protocol</h3>
+        <h3 className="font-bold text-gray-900 mb-3">Work Set Protocol</h3>
         <div className="space-y-3">
           <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-sm font-bold flex-shrink-0">1</div>
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">1</div>
             <div>
-              <div className="text-sm font-semibold text-gray-800">Go to true muscular failure</div>
-              <div className="text-xs text-gray-500">You physically cannot complete another rep with good form</div>
+              <div className="text-sm font-semibold text-gray-800">RIR 1–2 (Reps in Reserve)</div>
+              <div className="text-xs text-gray-500">Stop when you have 1–2 reps left in the tank. ~90% of the hypertrophy stimulus, far less fatigue.</div>
             </div>
           </div>
           <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold flex-shrink-0">2</div>
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">2</div>
             <div>
-              <div className="text-sm font-semibold text-gray-800">Drop set (optional)</div>
-              <div className="text-xs text-gray-500">Rest 2-3 min, reduce weight ~10%, go to failure again — "hitting the nail in twice"</div>
+              <div className="text-sm font-semibold text-gray-800">1–2 work sets per exercise</div>
+              <div className="text-xs text-gray-500">Quality over volume. If the first set was strong, do a second. If not, move on.</div>
             </div>
           </div>
           <div className="flex gap-3">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">3</div>
             <div>
-              <div className="text-sm font-semibold text-gray-800">Didn't nail it? Do another set.</div>
-              <div className="text-xs text-gray-500">"There's no law — if you don't feel you nailed it, do another one."</div>
+              <div className="text-sm font-semibold text-gray-800">Occasional true failure (last exercise only)</div>
+              <div className="text-xs text-gray-500">On your last exercise of the session, you can push to true failure if feeling great.</div>
             </div>
           </div>
         </div>
@@ -769,18 +805,18 @@ function LiftingGuide() {
         <div className="flex gap-1 mb-3">
           {[1,2,3,4,5,6,7,8].map(w => (
             <div key={w} className={`flex-1 h-8 rounded flex items-center justify-center text-xs font-bold ${
-              w <= 6 ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'
+              w <= 6 ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
             }`}>{w <= 6 ? w : 'D'}</div>
           ))}
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-red-50 rounded-lg p-3">
-            <div className="text-sm font-semibold text-red-700">Weeks 1–6: Train Hard</div>
-            <div className="text-xs text-gray-600 mt-1">Full intensity, true failure, progressive overload every session</div>
+          <div className="bg-blue-50 rounded-lg p-3">
+            <div className="text-sm font-semibold text-blue-700">Weeks 1–6: Train Hard</div>
+            <div className="text-xs text-gray-600 mt-1">Full effort at RIR 1–2, progressive overload every session</div>
           </div>
           <div className="bg-purple-50 rounded-lg p-3">
             <div className="text-sm font-semibold text-purple-700">Weeks 7–8: Deload</div>
-            <div className="text-xs text-gray-600 mt-1">Light weight, nowhere near failure, blood flow and maintenance only</div>
+            <div className="text-xs text-gray-600 mt-1">60–70% effort, same exercises, nowhere near failure</div>
           </div>
         </div>
       </div>
@@ -790,10 +826,10 @@ function LiftingGuide() {
         <h3 className="font-bold text-gray-900 mb-3">Core Principles</h3>
         <div className="space-y-3">
           {[
-            { title: 'Progressive Overload', desc: 'Add weight or reps every session, even if it\'s just half a pound. The body won\'t change without a reason to.', icon: '↑' },
-            { title: 'Mind-Muscle Connection', desc: 'Feel the target muscle contract. Understand what the muscle does. Light practice sets build this before you load up.', icon: '🧠' },
-            { title: 'Strict Form Always', desc: 'When it gets hard, your brain will try to cheat the movement. Override that instinct. Stay with the form until you can\'t do another rep.', icon: '🎯' },
-            { title: 'Not More Than Necessary', desc: '"Do enough to stimulate but not more than that — this is an overload you have to recover from." Stimulate → Recover → Grow.', icon: '⚖' },
+            { title: 'Progressive Overload', desc: 'Add a rep or a small amount of weight session to session. Ride the same exercises for months.', icon: '↑' },
+            { title: 'Pattern Slots First', desc: 'Always fill: squat, hinge, push, pull, shoulders, rear delts. Cut arms/calves before patterns if time is short.', icon: '🎯' },
+            { title: 'RIR 1–2 Default', desc: 'Stop 1–2 reps shy of failure on most sets. Save true failure for the occasional last exercise.', icon: '⚖' },
+            { title: 'Ring Priority', desc: 'Ring movements build stabilizer strength that fixed bars cannot. Prioritize ring progressions.', icon: '💪' },
             { title: 'Write It Down', desc: 'Every workout. Weight, reps, how you felt. If you can\'t see the data, you can\'t know if you\'re progressing.', icon: '📓' },
           ].map((p, i) => (
             <div key={i} className="flex gap-3">
@@ -807,36 +843,16 @@ function LiftingGuide() {
         </div>
       </div>
 
-      {/* Push/Pull Split */}
-      <div className="bg-white rounded-2xl p-5 shadow-sm border">
-        <h3 className="font-bold text-gray-900 mb-3">Your Split</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#2563EB', background: '#DBEAFE' }}>
-            <div className="text-sm font-bold" style={{ color: '#2563EB' }}>Monday — Push</div>
-            <div className="text-xs text-gray-600 mt-2 space-y-1">
-              <div>Chest (press variations)</div>
-              <div>Shoulders (overhead press)</div>
-              <div>Triceps (extensions)</div>
-              <div>Quads (squat/leg press)</div>
-              <div>Calves</div>
-            </div>
-          </div>
-          <div className="rounded-xl p-4 border-2" style={{ borderColor: '#2563EB', background: '#DBEAFE' }}>
-            <div className="text-sm font-bold" style={{ color: '#2563EB' }}>Thursday — Pull</div>
-            <div className="text-xs text-gray-600 mt-2 space-y-1">
-              <div>Back (rows, pulldowns)</div>
-              <div>Biceps (curls)</div>
-              <div>Hamstrings (RDL/deadlift)</div>
-              <div>Rear delts</div>
-            </div>
-          </div>
+      {/* Yates Archive Note */}
+      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+        <div className="text-xs text-gray-500 text-center">
+          <strong>Previous protocol:</strong> Dorian Yates HIT (push/pull split, true failure). Archived in Home-Gym-Exercise-Menu-Yates-HIT.docx.
         </div>
-        <div className="text-xs text-gray-400 mt-3 text-center">Each muscle group hit once directly per week, with indirect overlap between sessions</div>
       </div>
 
       {/* Source */}
       <div className="text-center text-xs text-gray-400 pb-4">
-        Protocol: Dorian Yates via Huberman Lab Podcast — "Blood and Guts" high-intensity training
+        Protocol: Mike Israetel — Full-body frequency, RIR-based training, pattern-slot programming
       </div>
     </div>
   );
