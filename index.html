@@ -41,10 +41,12 @@ const STORAGE_KEY = 'levine-tracker-v1';
 
 const W = {
   strengthA: { name: 'Strength A',         short: 'Str A',    color: '#1D4ED8', bg: '#DBEAFE', dur: '~45-60 min',
-              detail: ['Full body: squat, hinge, push, pull, shoulders, arms', 'Goblet squat, DB RDL, ring push-ups, ring rows, OHP', '1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Mike-style warm-up: easy reps → half weight → feel set'],
+              exercises: ['Goblet Squat', 'DB RDL', 'Ring Push-Ups', 'Ring Rows', 'DB Overhead Press', 'Band Pull-Aparts', 'Band Pushdowns', 'DB Hammer Curls', 'Standing Calf Raises', 'Core Rotisserie'],
+              detail: ['1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Warm-up: easy reps → half weight → feel set'],
               cue: 'Stop 1-2 reps shy of failure. Feel the muscle, control the weight, progress over months.' },
   strengthB: { name: 'Strength B',         short: 'Str B',    color: '#93C5FD', bg: '#EFF6FF', dur: '~45-60 min',
-              detail: ['Full body: lunge, hinge, push, pull, shoulders, arms', 'Reverse lunges, Nordics, DB bench, pull-ups, laterals', '1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Mike-style warm-up: easy reps → half weight → feel set'],
+              exercises: ['Reverse Lunges', 'Nordics / Hip Thrust', 'DB Bench Press', 'Pull-Ups', 'DB Lateral Raises', 'Band Pull-Aparts', 'DB Overhead Extension', 'DB Curls', 'Seated Calf Raises', 'Core Rotisserie'],
+              detail: ['1-2 work sets per exercise, 6-12 reps, RIR 1-2', 'Warm-up: easy reps → half weight → feel set'],
               cue: 'Same intensity as Day A. Different exercises, same pattern slots, same effort.' },
   '4x4':   { name: 'Norwegian 4×4',       short: '4×4',      color: '#C00000', bg: '#FCEAEA', dur: '~43 min',
               steps: ['10 min warm-up at 60-70% peak HR', 'Round 1: 4 min WORK → 3 min RECOVERY', 'Round 2: 4 min WORK → 3 min RECOVERY', 'Round 3: 4 min WORK → 3 min RECOVERY', 'Round 4: 4 min WORK', '5 min cool-down at 60-70% peak HR'],
@@ -324,6 +326,13 @@ function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpa
                     <span className="text-gray-400 mr-2 flex-shrink-0">•</span>
                     <span>{s}</span>
                   </div>
+                ))}
+              </div>
+            )}
+            {info.exercises && (
+              <div className="mb-2">
+                {info.exercises.map((ex, i) => (
+                  <div key={i} className="text-xs text-gray-600" style={{ paddingLeft: '4px' }}>{i + 1}. {ex}</div>
                 ))}
               </div>
             )}
