@@ -310,7 +310,9 @@ function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteCha
   const key = dk(date);
   const done = !!completed[key];
   const noteText = notes[key] || '';
-  const hasNote = !!noteText;
+  const exNotesRaw = notes[key + ':ex'];
+  const exNotes = typeof exNotesRaw === 'string' ? (() => { try { return JSON.parse(exNotesRaw); } catch { return {}; } })() : (exNotesRaw || {});
+  const hasNote = !!noteText || Object.values(exNotes).some(v => v && v.trim());
   const durStr = workout.w ? `${workout.w}m work / ${workout.m}m total` : (info.dur || '');
 
   if (isRest) {
@@ -391,9 +393,22 @@ function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteCha
               </div>
             )}
             {info.exercises && (
-              <div className="mb-2">
+              <div className="mb-2 space-y-1.5">
                 {info.exercises.map((ex, i) => (
-                  <div key={i} className="text-xs text-gray-600">{i + 1}. {ex}</div>
+                  <div key={i} className="flex items-start gap-2">
+                    <div className="text-xs text-gray-600 whitespace-nowrap pt-1 w-40 flex-shrink-0">{i + 1}. {ex}</div>
+                    <input
+                      type="text"
+                      placeholder="weight, reps, band..."
+                      value={exNotes[i] || ''}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => {
+                        const updated = { ...exNotes, [i]: e.target.value };
+                        onNoteChange(key + ':ex', JSON.stringify(updated));
+                      }}
+                      className="flex-1 min-w-0 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                    />
+                  </div>
                 ))}
               </div>
             )}
