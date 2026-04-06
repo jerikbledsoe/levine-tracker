@@ -1053,12 +1053,42 @@ function App() {
 
   // Auth state management
   useEffect(() => {
+    let subscription = null;
+
+    // Safety timeout — never stay on loading screen more than 3 seconds
+    const safetyTimer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 3000);
+
     const initAuth = async () => {
       try {
+        // Set up auth listener first
+        const { data } = sb.auth.onAuthStateChange(async (event, session) => {
+          try {
+            if (session?.user) {
+              setUser(session.user);
+              const supabaseData = await loadFromSupabase(session.user.id);
+              const supabaseNotes = await loadNotesFromSupabase(session.user.id);
+              const merged = { ...completed, ...supabaseData };
+              const mergedNotes = { ...notes, ...supabaseNotes };
+              setCompleted(merged);
+              setNotes(mergedNotes);
+              saveState(merged);
+              saveNotes(mergedNotes);
+              await bulkSync(session.user.id, merged);
+            } else {
+              setUser(null);
+            }
+          } catch (err) {
+            console.error('Error in auth state change:', err);
+          }
+        });
+        subscription = data?.subscription;
+
+        // Get existing session
         const { data: { session } } = await sb.auth.getSession();
         if (session?.user) {
           setUser(session.user);
-          // Load from Supabase and merge with localStorage
           const supabaseData = await loadFromSupabase(session.user.id);
           const supabaseNotes = await loadNotesFromSupabase(session.user.id);
           const merged = { ...completed, ...supabaseData };
@@ -1067,38 +1097,22 @@ function App() {
           setNotes(mergedNotes);
           saveState(merged);
           saveNotes(mergedNotes);
-          // Bulk sync any missing localStorage entries to Supabase
           await bulkSync(session.user.id, merged);
         }
       } catch (err) {
         console.error('Error initializing auth:', err);
       } finally {
+        clearTimeout(safetyTimer);
         setAuthLoading(false);
       }
-
-      // Listen for auth changes
-      const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-          setUser(session.user);
-          // Load from Supabase on sign in
-          const supabaseData = await loadFromSupabase(session.user.id);
-          const supabaseNotes = await loadNotesFromSupabase(session.user.id);
-          const merged = { ...completed, ...supabaseData };
-          const mergedNotes = { ...notes, ...supabaseNotes };
-          setCompleted(merged);
-          setNotes(mergedNotes);
-          saveState(merged);
-          saveNotes(mergedNotes);
-          await bulkSync(session.user.id, merged);
-        } else {
-          setUser(null);
-        }
-      });
-
-      return () => subscription?.unsubscribe();
     };
 
     initAuth();
+
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const toggle = useCallback((key) => {
@@ -1152,10 +1166,10 @@ function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#1e293b' }}>
         <div className="text-center">
-          <div className="text-lg font-semibold text-gray-900 mb-2">Levine Protocol Tracker</div>
-          <div className="text-sm text-gray-500">Loading...</div>
+          <div className="text-xl font-bold text-white mb-2">LEVINE PROTOCOL</div>
+          <div className="text-sm text-gray-400">Loading your data...</div>
         </div>
       </div>
     );
