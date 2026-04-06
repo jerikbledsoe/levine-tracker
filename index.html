@@ -1007,6 +1007,7 @@ function App() {
   const [notes, setNotes] = useState(loadNotes);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const cw = curWeek();
 
   // Debounced note sync
@@ -1134,20 +1135,16 @@ function App() {
     );
   }
 
-  // Determine which phase tab to show on load (not Summary)
-  let initialTab = 0; // Default to Phase 1
-  const currentPhaseIdx = PHASES.findIndex(p => cw >= p.ws && cw <= p.we);
-  if (currentPhaseIdx >= 0) {
-    initialTab = currentPhaseIdx;
-  }
-  // If this is the first render and no tab has been explicitly set, navigate to the current phase
-  const [hasInitialized, setHasInitialized] = useState(false);
+  // Determine which phase tab to show on load
   useEffect(() => {
-    if (!hasInitialized && tab === 0) {
-      setTab(initialTab);
+    if (!hasInitialized) {
+      const currentPhaseIdx = PHASES.findIndex(p => cw >= p.ws && cw <= p.we);
+      if (currentPhaseIdx >= 0) {
+        setTab(currentPhaseIdx);
+      }
       setHasInitialized(true);
     }
-  }, []);
+  }, [hasInitialized]);
 
   return (
     <div className="min-h-screen pb-8">
