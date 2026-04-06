@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #d1d5db; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f8fafc; }
 .no-scroll::-webkit-scrollbar { display: none; }
 .no-scroll { scrollbar-width: none; }
 .fade-in { animation: fadeIn 0.2s ease-in; }
@@ -36,8 +36,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // DATA
 // ════════════════════════════════════════
 
-const START = new Date(2026, 2, 2); // Mar 2, 2026
+const START = new Date(2026, 3, 6); // Apr 6, 2026
 const STORAGE_KEY = 'levine-tracker-v1';
+const NOTES_STORAGE_KEY = 'levine-notes-v1';
 
 const W = {
   strengthA: { name: 'Strength A',         short: 'Str A',    color: '#1D4ED8', bg: '#DBEAFE', dur: '~45-60 min',
@@ -64,8 +65,6 @@ const W = {
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
-// t = type, w = work minutes, m = total minutes, i = intensity %
-// Day order: Mon=StrengthA, Tue=Base/4x4, Wed=Base→Long, Thu=StrengthB, Fri=REST, Sat=Base, Sun=REST
 const SP = [
   { id:'1a', p:0, n:'Foundation',          ws:1,  we:6,   t:[ {t:'strengthA'}, {t:'base',w:30,m:50}, {t:'base',w:30,m:50}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
   { id:'1b', p:0, n:'Foundation Extended',  ws:7,  we:12,  t:[ {t:'strengthA'}, {t:'base',w:40,m:60}, {t:'base',w:40,m:60}, {t:'strengthB'}, {t:'rest'}, {t:'base',w:30,m:50}, {t:'rest'} ] },
@@ -95,12 +94,12 @@ function dateFor(wk, dayIdx) {
 }
 function dk(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
 function fmt(d) { return d.toLocaleDateString('en-US', { month:'short', day:'numeric' }); }
+function fmtDayName(d) { return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }); }
 function curWeek() {
   const diff = Math.floor((new Date() - START) / (7*24*60*60*1000));
   return Math.max(1, Math.min(104, diff + 1));
 }
 function getSP(wk) { return SP.find(s => wk >= s.ws && wk <= s.we); }
-// Yates deload cycle: 6 weeks hard, 2 weeks submaximal
 function isDeloadWeek(wk) { return ((wk - 1) % 8) >= 6; }
 function sessionsInWeek(wk) {
   const sp = getSP(wk);
@@ -121,6 +120,10 @@ function loadState() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
 }
 function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+function loadNotes() {
+  try { return JSON.parse(localStorage.getItem(NOTES_STORAGE_KEY)) || {}; } catch { return {}; }
+}
+function saveNotes(n) { localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(n)); }
 
 // ════════════════════════════════════════
 // SUPABASE FUNCTIONS
@@ -183,6 +186,37 @@ async function bulkSync(userId, completed) {
   }
 }
 
+async function loadNotesFromSupabase(userId) {
+  try {
+    const { data, error } = await sb
+      .from('workout_notes')
+      .select('date_key, note_text')
+      .eq('user_id', userId);
+    if (error) throw error;
+    const result = {};
+    if (data) data.forEach(row => { result[row.date_key] = row.note_text; });
+    return result;
+  } catch (err) {
+    console.error('Error loading notes from Supabase:', err);
+    return {};
+  }
+}
+
+async function syncNote(userId, dateKey, noteText) {
+  try {
+    if (noteText && noteText.trim()) {
+      await sb.from('workout_notes')
+        .upsert({ user_id: userId, date_key: dateKey, note_text: noteText, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,date_key' });
+    } else {
+      await sb.from('workout_notes')
+        .delete().eq('user_id', userId).eq('date_key', dateKey);
+    }
+  } catch (err) {
+    console.error('Error syncing note:', err);
+  }
+}
+
 // ════════════════════════════════════════
 // COMPONENTS
 // ════════════════════════════════════════
@@ -218,9 +252,9 @@ function TopBar({ cw, completed, user, onSignIn, onSignOut }) {
   };
 
   return (
-    <div className="bg-gray-900 text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+    <div className="bg-gray-900 text-white px-4 py-4 sticky top-0 z-50 shadow-lg">
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-lg font-bold tracking-wide">LEVINE PROTOCOL</h1>
             <p className="text-xs text-gray-400">24-Month Heart & Brain Remodeling</p>
@@ -253,9 +287,9 @@ function TopBar({ cw, completed, user, onSignIn, onSignOut }) {
 }
 
 function TabNav({ active, onChange }) {
-  const tabs = ['Summary', ...PHASES.map(p => p.tab), 'Lifting Guide'];
+  const tabs = [...PHASES.map(p => p.tab), 'Lifting Guide', 'Stats'];
   return (
-    <div className="bg-white border-b sticky top-[76px] z-40 shadow-sm">
+    <div className="bg-white border-b sticky top-[96px] z-40 shadow-sm">
       <div className="max-w-5xl mx-auto flex no-scroll overflow-x-auto">
         {tabs.map((t, i) => (
           <button key={t} onClick={() => onChange(i)}
@@ -268,49 +302,76 @@ function TabNav({ active, onChange }) {
   );
 }
 
-function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpand, week }) {
+function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteChange, expanded, onExpand, week, isMobile, isToday }) {
   const info = W[workout.t];
   const isRest = workout.t === 'rest';
   const isStrength = workout.t === 'strengthA' || workout.t === 'strengthB';
   const deload = isStrength && isDeloadWeek(week);
   const key = dk(date);
   const done = !!completed[key];
+  const noteText = notes[key] || '';
+  const hasNote = !!noteText;
   const durStr = workout.w ? `${workout.w}m work / ${workout.m}m total` : (info.dur || '');
+
+  if (isRest) {
+    return (
+      <div className={`rounded-xl border border-gray-200 transition-all ${isMobile ? 'py-2 px-3' : 'p-3'}`}
+        style={{ background: info.bg }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className={`${isMobile ? 'text-xs' : 'text-xs'} font-bold text-gray-500`}>{dayName}</div>
+            <div className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>{fmt(date)}</div>
+          </div>
+          <div className={`font-semibold ${isMobile ? 'text-sm' : 'text-xs'}`} style={{ color: info.color }}>Rest</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      className={`rounded-xl border transition-all cursor-pointer ${
-        done ? 'border-green-300 shadow-sm' : isRest ? 'border-gray-200' : 'border-gray-200 hover:shadow-md'
-      }`}
-      style={{ background: done ? '#f0fdf4' : info.bg, minHeight: isRest ? 80 : 120 }}
-      onClick={() => !isRest && onExpand(expanded === key ? null : key)}
+      className={`rounded-2xl border transition-all cursor-pointer ${
+        done ? 'border-green-300 shadow-sm' : 'border-gray-200 hover:shadow-md'
+      } ${isToday ? 'ring-2 lg:ring-4' : ''}`}
+      style={{
+        background: done ? '#f0fdf4' : info.bg,
+        borderLeftWidth: isMobile ? 0 : 4,
+        borderLeftColor: isMobile ? 'transparent' : info.color,
+        ringColor: isToday ? info.color : 'transparent',
+      }}
+      onClick={() => onExpand(expanded === key ? null : key)}
     >
-      <div className="p-3">
-        <div className="flex items-start justify-between mb-1">
+      <div className={`${isMobile ? 'p-3' : 'p-4'}`}>
+        {/* Header */}
+        <div className="flex items-start justify-between mb-2">
           <div>
-            <div className="text-xs font-bold text-gray-700">{dayName}</div>
-            <div className="text-[10px] text-gray-400">{fmt(date)}</div>
+            <div className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-700`}>{dayName}</div>
+            <div className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>{fmt(date)}</div>
           </div>
-          {!isRest && (
-            <button onClick={e => { e.stopPropagation(); onToggle(key); }}
-              className={`w-6 h-6 rounded-md border-2 flex items-center justify-center text-xs font-bold transition-all flex-shrink-0 ${
-                done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-gray-400'
-              }`}>
-              {done && '✓'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {hasNote && <div className="text-base">📝</div>}
+            {!isRest && (
+              <button onClick={e => { e.stopPropagation(); onToggle(key); }}
+                className={`w-6 h-6 rounded-md border-2 flex items-center justify-center text-xs font-bold transition-all flex-shrink-0 ${
+                  done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-gray-400'
+                }`}>
+                {done && '✓'}
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-2">
-          <div className="font-semibold text-sm" style={{ color: done ? '#16a34a' : info.color }}>{info.name}</div>
+        {/* Workout name */}
+        <div className={`${isMobile ? 'mb-1' : 'mb-2'}`}>
+          <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: done ? '#16a34a' : info.color }}>{info.name}</div>
           {deload && <div className="text-[10px] font-semibold mt-0.5 text-purple-600">DELOAD WEEK</div>}
-          {workout.t === '4x4' && <div className="text-xs font-medium mt-0.5" style={{ color: info.color }}>{workout.i}% peak HR</div>}
-          {durStr && !deload && <div className="text-[11px] text-gray-500 mt-0.5">{durStr}</div>}
-          {deload && <div className="text-[11px] text-gray-500 mt-0.5">Light / submaximal</div>}
+          {workout.t === '4x4' && <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-medium mt-0.5`} style={{ color: info.color }}>{workout.i}% peak HR</div>}
+          {durStr && !deload && <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-gray-500 mt-0.5`}>{durStr}</div>}
+          {deload && <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-gray-500 mt-0.5`}>Light / submaximal</div>}
         </div>
 
-        {expanded === key && !isRest && (
-          <div className="mt-3 pt-3 border-t border-gray-200 fade-in">
+        {expanded === key && (
+          <div className={`${isMobile ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-gray-200 fade-in`}>
             {deload && (
               <div className="space-y-1 mb-2 bg-purple-50 rounded-lg p-2">
                 <div className="text-xs text-purple-700 font-semibold">Deload Week — Back Off</div>
@@ -332,7 +393,7 @@ function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpa
             {info.exercises && (
               <div className="mb-2">
                 {info.exercises.map((ex, i) => (
-                  <div key={i} className="text-xs text-gray-600" style={{ paddingLeft: '4px' }}>{i + 1}. {ex}</div>
+                  <div key={i} className="text-xs text-gray-600">{i + 1}. {ex}</div>
                 ))}
               </div>
             )}
@@ -343,13 +404,26 @@ function DayCard({ dayName, date, workout, completed, onToggle, expanded, onExpa
                 ))}
               </div>
             )}
-            {info.cue && <div className="text-[11px] text-gray-500 italic mt-1">{info.cue}</div>}
+            {info.cue && <div className="text-[11px] text-gray-500 italic mt-2 mb-3">{info.cue}</div>}
+
+            {/* Notes textarea */}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <textarea
+                placeholder="Session notes..."
+                value={noteText}
+                onClick={e => e.stopPropagation()}
+                onChange={e => onNoteChange(key, e.target.value)}
+                onBlur={() => {}}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-gray-400"
+                rows="2"
+              />
+            </div>
           </div>
         )}
       </div>
 
       {!isRest && (
-        <div className="h-1 rounded-b-xl" style={{ background: done ? '#22c55e' : info.color }}></div>
+        <div className="h-1 rounded-b-2xl" style={{ background: done ? '#22c55e' : info.color }}></div>
       )}
     </div>
   );
@@ -368,14 +442,14 @@ function WeekSelector({ phase, selected, onChange, cw, completed }) {
   }, [selected]);
 
   return (
-    <div ref={ref} className="flex gap-2 overflow-x-auto no-scroll py-3 px-1">
+    <div ref={ref} className="flex gap-2 overflow-x-auto no-scroll py-3 px-4">
       {weeks.map(w => {
         const done = isWeekComplete(w, completed);
         const isCur = w === cw;
         const isSel = w === selected;
         return (
           <button key={w} data-wk={w} onClick={() => onChange(w)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+            className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
               isSel ? 'bg-gray-900 text-white shadow-md' :
               isCur ? 'bg-gray-200 text-gray-900 ring-2 ring-gray-900' :
               done ? 'bg-green-100 text-green-700' :
@@ -389,11 +463,18 @@ function WeekSelector({ phase, selected, onChange, cw, completed }) {
   );
 }
 
-function PhaseView({ phaseIdx, cw, completed, onToggle }) {
+function PhaseView({ phaseIdx, cw, completed, notes, onToggle, onNoteChange }) {
   const phase = PHASES[phaseIdx];
   const initWeek = Math.max(phase.ws, Math.min(cw, phase.we));
   const [selWeek, setSelWeek] = useState(initWeek);
   const [expanded, setExpanded] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     setSelWeek(Math.max(phase.ws, Math.min(cw, phase.we)));
@@ -406,37 +487,91 @@ function PhaseView({ phaseIdx, cw, completed, onToggle }) {
   const total = sessionsInWeek(selWeek);
   const startD = fmt(dates[0]);
   const endD = fmt(dates[6]);
+  const isCurrentWeek = selWeek === cw;
+
+  // Get today's date and day index
+  const today = new Date();
+  const todayKey = dk(today);
+  let todayDayIdx = -1;
+  let todayDate = null;
+  if (isCurrentWeek) {
+    for (let i = 0; i < 7; i++) {
+      if (dk(dates[i]) === todayKey) {
+        todayDayIdx = i;
+        todayDate = dates[i];
+        break;
+      }
+    }
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-4">
-      <div className="flex items-center justify-between mb-1">
+      {/* Phase header */}
+      <div className="flex items-center justify-between mb-3">
         <div>
-          <h2 className="text-lg font-bold" style={{ color: phase.color }}>{phase.name}</h2>
-          {sp && <p className="text-xs text-gray-500">{sp.n} — {startD} – {endD}</p>}
+          <h2 className="text-2xl font-bold" style={{ color: phase.color }}>{phase.name}</h2>
+          {sp && <p className="text-xs text-gray-600 mt-1">{sp.n}</p>}
         </div>
         <div className="text-right">
-          <div className="text-sm font-semibold">{done}/{total} sessions</div>
+          <div className="text-lg font-bold text-gray-900">{done}/{total}</div>
           <div className="text-xs text-gray-400">Week {selWeek}</div>
         </div>
       </div>
 
-      <ProgressBar value={done} max={total} color={phase.color} height={6} />
+      <ProgressBar value={done} max={total} color={phase.color} height={8} />
 
       <WeekSelector phase={phase} selected={selWeek} onChange={w => { setSelWeek(w); setExpanded(null); }} cw={cw} completed={completed} />
 
       {sp && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 mt-2">
-          {sp.t.map((workout, i) => (
-            <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
-              completed={completed} onToggle={onToggle} expanded={expanded} onExpand={setExpanded} week={selWeek} />
-          ))}
+        <div>
+          {/* Today hero card */}
+          {isCurrentWeek && todayDayIdx >= 0 && sp.t[todayDayIdx].t !== 'rest' && (
+            <div className="mb-4">
+              <DayCard
+                dayName={`Today: ${DAYS[todayDayIdx]}`}
+                date={todayDate}
+                workout={sp.t[todayDayIdx]}
+                completed={completed}
+                notes={notes}
+                onToggle={onToggle}
+                onNoteChange={onNoteChange}
+                expanded={dk(todayDate)}
+                onExpand={() => {}}
+                week={selWeek}
+                isMobile={true}
+                isToday={true}
+              />
+            </div>
+          )}
+
+          {/* Day grid/stack */}
+          {isMobile ? (
+            <div className="space-y-2">
+              {sp.t.map((workout, i) => {
+                if (isCurrentWeek && i === todayDayIdx) return null; // Skip today in mobile stack
+                return (
+                  <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
+                    completed={completed} notes={notes} onToggle={onToggle} onNoteChange={onNoteChange}
+                    expanded={expanded} onExpand={setExpanded} week={selWeek} isMobile={true} isToday={false} />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+              {sp.t.map((workout, i) => (
+                <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
+                  completed={completed} notes={notes} onToggle={onToggle} onNoteChange={onNoteChange}
+                  expanded={expanded} onExpand={setExpanded} week={selWeek} isMobile={false} isToday={false} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn, onSignOut }) {
+function StatsView({ cw, completed, setCompleted, setNotes, onTabChange, user, onSignIn, onSignOut }) {
   const [syncMsg, setSyncMsg] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
@@ -460,7 +595,6 @@ function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn,
       }
     }
 
-    // Streak: consecutive complete weeks ending at or before current week
     for (let w = cw; w >= 1; w--) {
       if (isWeekComplete(w, completed)) streak++;
       else break;
@@ -544,7 +678,7 @@ function SummaryView({ cw, completed, setCompleted, onTabChange, user, onSignIn,
                 borderColor: isActive ? ps.color : '#e5e7eb',
                 ringColor: isActive ? ps.color : undefined,
               }}
-              onClick={() => onTabChange(i + 1)}
+              onClick={() => onTabChange(i)}
             >
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-bold text-sm" style={{ color: ps.color }}>{ps.name}</h4>
@@ -726,7 +860,7 @@ function LiftingGuide() {
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 text-white">
         <h2 className="text-xl font-bold mb-1">Lifting Guide</h2>
         <p className="text-sm text-gray-300">Full-Body 2×/Week — Pattern-Based Training</p>
-        <p className="text-xs text-gray-400 mt-1">Based on Mike Israetel principles: frequency, volume, RIR-based effort</p>
+        <p className="text-xs text-gray-400 mt-1">Based on Mike Israetel principles: frequency, volume, RIR-based training</p>
       </div>
 
       {/* Template Table */}
@@ -870,23 +1004,53 @@ function LiftingGuide() {
 function App() {
   const [tab, setTab] = useState(0);
   const [completed, setCompleted] = useState(loadState);
+  const [notes, setNotes] = useState(loadNotes);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const cw = curWeek();
+
+  // Debounced note sync
+  const noteSyncTimersRef = useRef({});
+  const handleNoteChange = useCallback((dateKey, noteText) => {
+    setNotes(prev => {
+      const next = { ...prev };
+      if (noteText && noteText.trim()) {
+        next[dateKey] = noteText;
+      } else {
+        delete next[dateKey];
+      }
+      saveNotes(next);
+
+      // Debounce sync to Supabase
+      if (user) {
+        if (noteSyncTimersRef.current[dateKey]) {
+          clearTimeout(noteSyncTimersRef.current[dateKey]);
+        }
+        noteSyncTimersRef.current[dateKey] = setTimeout(() => {
+          syncNote(user.id, dateKey, noteText);
+        }, 1000);
+      }
+
+      return next;
+    });
+  }, [user]);
 
   // Auth state management
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Get existing session
         const { data: { session } } = await sb.auth.getSession();
         if (session?.user) {
           setUser(session.user);
           // Load from Supabase and merge with localStorage
           const supabaseData = await loadFromSupabase(session.user.id);
+          const supabaseNotes = await loadNotesFromSupabase(session.user.id);
           const merged = { ...completed, ...supabaseData };
+          const mergedNotes = { ...notes, ...supabaseNotes };
           setCompleted(merged);
+          setNotes(mergedNotes);
           saveState(merged);
+          saveNotes(mergedNotes);
           // Bulk sync any missing localStorage entries to Supabase
           await bulkSync(session.user.id, merged);
         }
@@ -902,9 +1066,13 @@ function App() {
           setUser(session.user);
           // Load from Supabase on sign in
           const supabaseData = await loadFromSupabase(session.user.id);
+          const supabaseNotes = await loadNotesFromSupabase(session.user.id);
           const merged = { ...completed, ...supabaseData };
+          const mergedNotes = { ...notes, ...supabaseNotes };
           setCompleted(merged);
+          setNotes(mergedNotes);
           saveState(merged);
+          saveNotes(mergedNotes);
           await bulkSync(session.user.id, merged);
         } else {
           setUser(null);
@@ -924,7 +1092,6 @@ function App() {
       if (next[key]) delete next[key]; else next[key] = true;
       saveState(next);
 
-      // Sync to Supabase if user is signed in
       if (user) {
         syncToggle(user.id, key, isCompleted);
       }
@@ -967,16 +1134,31 @@ function App() {
     );
   }
 
+  // Determine which phase tab to show on load (not Summary)
+  let initialTab = 0; // Default to Phase 1
+  const currentPhaseIdx = PHASES.findIndex(p => cw >= p.ws && cw <= p.we);
+  if (currentPhaseIdx >= 0) {
+    initialTab = currentPhaseIdx;
+  }
+  // If this is the first render and no tab has been explicitly set, navigate to the current phase
+  const [hasInitialized, setHasInitialized] = useState(false);
+  useEffect(() => {
+    if (!hasInitialized && tab === 0) {
+      setTab(initialTab);
+      setHasInitialized(true);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen pb-8">
       <TopBar cw={cw} completed={completed} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
       <TabNav active={tab} onChange={setTab} />
-      {tab === 0 ? (
-        <SummaryView cw={cw} completed={completed} setCompleted={setCompleted} onTabChange={setTab} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
-      ) : tab === 5 ? (
+      {tab === 4 ? (
         <LiftingGuide />
+      ) : tab === 5 ? (
+        <StatsView cw={cw} completed={completed} setCompleted={setCompleted} setNotes={setNotes} onTabChange={setTab} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
       ) : (
-        <PhaseView phaseIdx={tab - 1} cw={cw} completed={completed} onToggle={toggle} />
+        <PhaseView phaseIdx={tab} cw={cw} completed={completed} notes={notes} onToggle={toggle} onNoteChange={handleNoteChange} />
       )}
     </div>
   );
