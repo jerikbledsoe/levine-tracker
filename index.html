@@ -1124,6 +1124,17 @@ function App() {
     }
   };
 
+  // Determine which phase tab to show on load (must be before early return to maintain hook order)
+  useEffect(() => {
+    if (!hasInitialized && !authLoading) {
+      const currentPhaseIdx = PHASES.findIndex(p => cw >= p.ws && cw <= p.we);
+      if (currentPhaseIdx >= 0) {
+        setTab(currentPhaseIdx);
+      }
+      setHasInitialized(true);
+    }
+  }, [hasInitialized, authLoading]);
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -1134,17 +1145,6 @@ function App() {
       </div>
     );
   }
-
-  // Determine which phase tab to show on load
-  useEffect(() => {
-    if (!hasInitialized) {
-      const currentPhaseIdx = PHASES.findIndex(p => cw >= p.ws && cw <= p.we);
-      if (currentPhaseIdx >= 0) {
-        setTab(currentPhaseIdx);
-      }
-      setHasInitialized(true);
-    }
-  }, [hasInitialized]);
 
   return (
     <div className="min-h-screen pb-8">
