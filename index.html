@@ -328,13 +328,14 @@ function TabNav({ active, onChange }) {
   );
 }
 
-function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteChange, expanded, onExpand, week, isMobile, isToday }) {
+function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteChange, expanded, onExpand, week, isToday }) {
   const info = W[workout.t];
   const isRest = workout.t === 'rest';
   const isLift = info.kind === 'lift';
   const key = dk(date);
   const done = !!completed[key];
   const noteText = notes[key] || '';
+  const isOpen = expanded === key;
 
   // Per-set reps + weight, stored as JSON under `${key}:lift` → { exIdx: { r:[...], w:[...] } }
   const liftRaw = notes[key + ':lift'];
@@ -342,6 +343,9 @@ function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteCha
   const liftHas = Object.values(lift).some(o => o && (((o.r || []).some(x => x && String(x).trim())) || ((o.w || []).some(x => x && String(x).trim()))));
   const hasNote = !!noteText || liftHas;
   const durStr = workout.w ? `${workout.w}m work / ${workout.m}m total` : (info.dur || '');
+  const subtitle = isLift ? info.sub
+    : workout.t === '4x4' ? `${workout.i}% peak HR · ${info.dur || ''}`.trim().replace(/·\s*$/, '')
+    : durStr;
 
   const updateLift = (exIdx, field, setIdx, val) => {
     const next = { ...lift };
@@ -355,139 +359,109 @@ function DayCard({ dayName, date, workout, completed, notes, onToggle, onNoteCha
 
   if (isRest) {
     return (
-      <div className={`rounded-xl border border-gray-200 transition-all ${isMobile ? 'py-2 px-3' : 'p-3'}`}
-        style={{ background: info.bg }}>
-        <div className="flex items-center justify-between">
+      <div className="rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between" style={{ background: info.bg }}>
+        <div className="flex items-center gap-3">
+          <div className="w-1.5 h-9 rounded-full flex-shrink-0" style={{ background: info.color }}></div>
           <div>
-            <div className={`${isMobile ? 'text-xs' : 'text-xs'} font-bold text-gray-500`}>{dayName}</div>
-            <div className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>{fmt(date)}</div>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{dayName} <span className="text-gray-400 normal-case font-normal">· {fmt(date)}</span></div>
+            <div className="text-sm font-semibold text-gray-400">Rest day</div>
           </div>
-          <div className={`font-semibold ${isMobile ? 'text-sm' : 'text-xs'}`} style={{ color: info.color }}>Rest</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div
-      className={`rounded-2xl border transition-all cursor-pointer ${
-        done ? 'border-green-300 shadow-sm' : 'border-gray-200 hover:shadow-md'
-      } ${isToday ? 'ring-2 lg:ring-4' : ''}`}
-      style={{
-        background: done ? '#f0fdf4' : info.bg,
-        borderLeftWidth: isMobile ? 0 : 4,
-        borderLeftColor: isMobile ? 'transparent' : info.color,
-        ringColor: isToday ? info.color : 'transparent',
-      }}
-      onClick={() => onExpand(expanded === key ? null : key)}
-    >
-      <div className={`${isMobile ? 'p-3' : 'p-4'}`}>
-        {/* Header */}
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <div className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-gray-700`}>{dayName}</div>
-            <div className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>{fmt(date)}</div>
+    <div className={`rounded-2xl border bg-white transition-all overflow-hidden ${
+        done ? 'border-green-300' : 'border-gray-200'} ${isToday ? 'ring-2' : ''}`}
+      style={{ ringColor: isToday ? info.color : 'transparent' }}>
+
+      {/* Collapsed header row — tap to toggle */}
+      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+        style={{ background: isOpen ? info.bg : (done ? '#f0fdf4' : '#fff') }}
+        onClick={() => onExpand(isOpen ? null : key)}>
+        <div className="w-1.5 self-stretch rounded-full flex-shrink-0" style={{ background: info.color, minHeight: '2.75rem' }}></div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{dayName}</span>
+            <span className="text-[11px] text-gray-400">{fmt(date)}</span>
+            {isToday && <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded-full" style={{ background: info.color }}>TODAY</span>}
+            {hasNote && <span className="text-xs">📝</span>}
           </div>
-          <div className="flex items-center gap-2">
-            {hasNote && <div className="text-base">📝</div>}
-            <button onClick={e => { e.stopPropagation(); onToggle(key); }}
-              className={`w-6 h-6 rounded-md border-2 flex items-center justify-center text-xs font-bold transition-all flex-shrink-0 ${
-                done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-gray-400'
-              }`}>
-              {done && '✓'}
-            </button>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="text-base font-bold flex-shrink-0" style={{ color: done ? '#16a34a' : info.color }}>{info.name}</span>
+            {subtitle && <span className="text-[11px] text-gray-500 truncate">{subtitle}</span>}
           </div>
         </div>
-
-        {/* Workout name */}
-        <div className={`${isMobile ? 'mb-1' : 'mb-2'}`}>
-          <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: done ? '#16a34a' : info.color }}>{info.name}</div>
-          {isLift && <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-gray-500 mt-0.5`}>{info.sub}</div>}
-          {workout.t === '4x4' && <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} font-medium mt-0.5`} style={{ color: info.color }}>{workout.i}% peak HR</div>}
-          {durStr && !isLift && <div className={`${isMobile ? 'text-[10px]' : 'text-[11px]'} text-gray-500 mt-0.5`}>{durStr}</div>}
-        </div>
-
-        {expanded === key && (
-          <div className={`${isMobile ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-gray-200 fade-in`}>
-            {isLift && (
-              <div className="text-[10px] text-gray-600 bg-gray-50 rounded-lg p-2 mb-3 leading-relaxed">
-                <strong>Progression:</strong> lead lift 3 sets (build 6→10 reps), accessories 2 sets (build 8→12). Add 2.5–5 lb once you top the range, then drop back down. Rest 1–3 min.
-              </div>
-            )}
-            {isLift && (
-              <div className="space-y-2.5 mb-2">
-                {info.exercises.map((ex, i) => {
-                  const label = ex.rotate ? ex.rotate[week % 2] : ex.n;
-                  const alt = ex.rotate ? ex.rotate[(week + 1) % 2] : null;
-                  return (
-                    <div key={i} className="bg-white rounded-lg border border-gray-200 p-2.5">
-                      <div className="flex items-baseline justify-between mb-1">
-                        <div className="text-xs font-semibold text-gray-800">{i + 1}. {label}</div>
-                        <div className="text-[10px] text-gray-400 flex-shrink-0 ml-2">{ex.sets} sets</div>
-                      </div>
-                      {alt && <div className="text-[9px] text-gray-400 italic mb-1.5">rotates weekly — alt: {alt}</div>}
-                      <div className="grid grid-cols-[3rem_1fr_1fr] gap-1.5 items-center">
-                        <div></div>
-                        <div className="text-[9px] text-gray-400 font-semibold text-center tracking-wide">REPS</div>
-                        <div className="text-[9px] text-gray-400 font-semibold text-center tracking-wide">WEIGHT</div>
-                        {Array.from({ length: ex.sets }).map((_, s) => (
-                          <React.Fragment key={s}>
-                            <div className="text-[10px] text-gray-400">Set {s + 1}</div>
-                            <input type="text" inputMode="numeric" placeholder="—"
-                              value={(lift[i] && lift[i].r && lift[i].r[s]) || ''}
-                              onClick={e => e.stopPropagation()}
-                              onChange={e => updateLift(i, 'r', s, e.target.value)}
-                              className="px-2 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white" />
-                            <input type="text" inputMode="decimal" placeholder="lb"
-                              value={(lift[i] && lift[i].w && lift[i].w[s]) || ''}
-                              onClick={e => e.stopPropagation()}
-                              onChange={e => updateLift(i, 'w', s, e.target.value)}
-                              className="px-2 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white" />
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {info.steps && (
-              <div className="space-y-1 mb-2">
-                {info.steps.map((s, i) => (
-                  <div key={i} className="text-xs text-gray-600 flex">
-                    <span className="text-gray-400 mr-2 flex-shrink-0">•</span>
-                    <span>{s}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {info.detail && (
-              <div className="space-y-1 mb-2">
-                {info.detail.map((d, i) => (
-                  <div key={i} className="text-xs text-gray-600">• {d}</div>
-                ))}
-              </div>
-            )}
-            {info.cue && <div className="text-[11px] text-gray-500 italic mt-2 mb-3">{info.cue}</div>}
-
-            {/* Notes textarea */}
-            <div className="mt-3 pt-3 border-t border-gray-100">
-              <textarea
-                placeholder="Session notes..."
-                value={noteText}
-                onClick={e => e.stopPropagation()}
-                onChange={e => onNoteChange(key, e.target.value)}
-                onBlur={() => {}}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-gray-400"
-                rows="2"
-              />
-            </div>
-          </div>
-        )}
+        <button onClick={e => { e.stopPropagation(); onToggle(key); }}
+          className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center text-sm font-bold transition-all flex-shrink-0 ${
+            done ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-gray-400 text-transparent'
+          }`}>✓</button>
+        <div className="text-gray-300 flex-shrink-0 text-[10px]">{isOpen ? '▲' : '▼'}</div>
       </div>
 
-      {!isRest && (
-        <div className="h-1 rounded-b-2xl" style={{ background: done ? '#22c55e' : info.color }}></div>
+      {/* Expanded body */}
+      {isOpen && (
+        <div className="px-4 pb-4 pt-1 fade-in border-t border-gray-100">
+          {isLift && (
+            <div className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2.5 my-3 leading-relaxed">
+              <strong>Progression:</strong> lead lift 3 sets (build 6→10 reps), accessories 2 sets (build 8→12). Add 2.5–5 lb once you top the range, then drop back down. Rest 1–3 min.
+            </div>
+          )}
+          {isLift && (
+            <div className="space-y-3">
+              {info.exercises.map((ex, i) => {
+                const label = ex.rotate ? ex.rotate[week % 2] : ex.n;
+                const alt = ex.rotate ? ex.rotate[(week + 1) % 2] : null;
+                return (
+                  <div key={i} className="bg-gray-50 rounded-xl border border-gray-200 p-3">
+                    <div className="flex items-baseline justify-between mb-2">
+                      <div className="text-sm font-semibold text-gray-800">{i + 1}. {label}</div>
+                      <div className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{ex.sets} sets</div>
+                    </div>
+                    {alt && <div className="text-[10px] text-gray-400 italic mb-2">rotates weekly — alt: {alt}</div>}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-[9px] font-semibold text-gray-400 uppercase tracking-wide">
+                        <div className="w-12 flex-shrink-0"></div>
+                        <div className="flex-1 text-center">Reps</div>
+                        <div className="flex-1 text-center">Weight</div>
+                      </div>
+                      {Array.from({ length: ex.sets }).map((_, s) => (
+                        <div key={s} className="flex items-center gap-2">
+                          <div className="w-12 flex-shrink-0 text-xs text-gray-400 font-medium">Set {s + 1}</div>
+                          <input type="text" inputMode="numeric" placeholder="—"
+                            value={(lift[i] && lift[i].r && lift[i].r[s]) || ''}
+                            onChange={e => updateLift(i, 'r', s, e.target.value)}
+                            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm text-center bg-white focus:outline-none focus:ring-2 focus:ring-gray-400" />
+                          <input type="text" inputMode="decimal" placeholder="lb"
+                            value={(lift[i] && lift[i].w && lift[i].w[s]) || ''}
+                            onChange={e => updateLift(i, 'w', s, e.target.value)}
+                            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm text-center bg-white focus:outline-none focus:ring-2 focus:ring-gray-400" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {info.steps && (
+            <div className="space-y-1.5 my-3">
+              {info.steps.map((s, i) => (
+                <div key={i} className="text-xs text-gray-600 flex"><span className="text-gray-400 mr-2 flex-shrink-0">•</span><span>{s}</span></div>
+              ))}
+            </div>
+          )}
+          {info.detail && (
+            <div className="space-y-1 my-3">
+              {info.detail.map((d, i) => (<div key={i} className="text-xs text-gray-600">• {d}</div>))}
+            </div>
+          )}
+          {info.cue && <div className="text-[11px] text-gray-500 italic mt-2 mb-3">{info.cue}</div>}
+          <textarea placeholder="Session notes..." value={noteText}
+            onChange={e => onNoteChange(key, e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 mt-2" rows="2" />
+        </div>
       )}
     </div>
   );
@@ -531,45 +505,32 @@ function PhaseView({ phaseIdx, cw, completed, notes, onToggle, onNoteChange }) {
   const phase = PHASES[phaseIdx];
   const initWeek = Math.max(phase.ws, Math.min(cw, phase.we));
   const [selWeek, setSelWeek] = useState(initWeek);
-  const [expanded, setExpanded] = useState(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
 
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const todayKey = dk(new Date());
+  const todayKeyInWeek = (wk) => {
+    const d = weekDates(wk).find(dt => dk(dt) === todayKey);
+    return d ? dk(d) : null;
+  };
+
+  // Accordion: one open day at a time. Default-open today (if it's in this week).
+  const [expanded, setExpanded] = useState(() => todayKeyInWeek(initWeek));
 
   useEffect(() => {
     setSelWeek(Math.max(phase.ws, Math.min(cw, phase.we)));
-    setExpanded(null);
   }, [phaseIdx, cw]);
+
+  // When the selected week changes, auto-open today (or collapse all if today isn't in it).
+  useEffect(() => {
+    setExpanded(todayKeyInWeek(selWeek));
+  }, [selWeek]);
 
   const sp = getSP(selWeek);
   const dates = weekDates(selWeek);
   const done = completedInWeek(selWeek, completed);
   const total = sessionsInWeek(selWeek);
-  const startD = fmt(dates[0]);
-  const endD = fmt(dates[6]);
-  const isCurrentWeek = selWeek === cw;
-
-  // Get today's date and day index
-  const today = new Date();
-  const todayKey = dk(today);
-  let todayDayIdx = -1;
-  let todayDate = null;
-  if (isCurrentWeek) {
-    for (let i = 0; i < 7; i++) {
-      if (dk(dates[i]) === todayKey) {
-        todayDayIdx = i;
-        todayDate = dates[i];
-        break;
-      }
-    }
-  }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-4">
+    <div className="max-w-2xl mx-auto px-4 py-4">
       {/* Phase header */}
       <div className="flex items-center justify-between mb-3">
         <div>
@@ -584,51 +545,16 @@ function PhaseView({ phaseIdx, cw, completed, notes, onToggle, onNoteChange }) {
 
       <ProgressBar value={done} max={total} color={phase.color} height={8} />
 
-      <WeekSelector phase={phase} selected={selWeek} onChange={w => { setSelWeek(w); setExpanded(null); }} cw={cw} completed={completed} />
+      <WeekSelector phase={phase} selected={selWeek} onChange={setSelWeek} cw={cw} completed={completed} />
 
       {sp && (
-        <div>
-          {/* Today hero card */}
-          {isCurrentWeek && todayDayIdx >= 0 && sp.t[todayDayIdx].t !== 'rest' && (
-            <div className="mb-4">
-              <DayCard
-                dayName={`Today: ${DAYS[todayDayIdx]}`}
-                date={todayDate}
-                workout={sp.t[todayDayIdx]}
-                completed={completed}
-                notes={notes}
-                onToggle={onToggle}
-                onNoteChange={onNoteChange}
-                expanded={dk(todayDate)}
-                onExpand={() => {}}
-                week={selWeek}
-                isMobile={true}
-                isToday={true}
-              />
-            </div>
-          )}
-
-          {/* Day grid/stack */}
-          {isMobile ? (
-            <div className="space-y-2">
-              {sp.t.map((workout, i) => {
-                if (isCurrentWeek && i === todayDayIdx) return null; // Skip today in mobile stack
-                return (
-                  <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
-                    completed={completed} notes={notes} onToggle={onToggle} onNoteChange={onNoteChange}
-                    expanded={expanded} onExpand={setExpanded} week={selWeek} isMobile={true} isToday={false} />
-                );
-              })}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
-              {sp.t.map((workout, i) => (
-                <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
-                  completed={completed} notes={notes} onToggle={onToggle} onNoteChange={onNoteChange}
-                  expanded={expanded} onExpand={setExpanded} week={selWeek} isMobile={false} isToday={false} />
-              ))}
-            </div>
-          )}
+        <div className="space-y-3 mt-2">
+          {sp.t.map((workout, i) => (
+            <DayCard key={i} dayName={DAYS[i]} date={dates[i]} workout={workout}
+              completed={completed} notes={notes} onToggle={onToggle} onNoteChange={onNoteChange}
+              expanded={expanded} onExpand={setExpanded} week={selWeek}
+              isToday={selWeek === cw && dk(dates[i]) === todayKey} />
+          ))}
         </div>
       )}
     </div>
