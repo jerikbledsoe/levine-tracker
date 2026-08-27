@@ -28,8 +28,19 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 // SUPABASE INIT
 // ════════════════════════════════════════
 
-const SUPABASE_URL = 'https://cjcvtkcqbaubyqlijssj.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqY3Z0a2NxYmF1YnlxbGlqc3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTg3NDMsImV4cCI6MjA4NzY5NDc0M30.kBZifO9Unx6kLvQ9Lqb-VKA3LDVQ-V9ROd-tLj2L-Jk';
+// Migrated 2026-08-26 off "EB Personal Projects" (cjcvtkcqbaubyqlijssj), which
+// is paused for good: the free-tier org allows 2 active projects and both slots
+// are held by things that must never sleep. This project is one of them, so the
+// daily keep-alive already covers these tables.
+//
+// Google sign-in was removed with the move. This is a single-user personal tool
+// and the sign-in only ever existed to produce a user id, so the id is now a
+// constant. OWNER_ID is the same uuid the old auth account had, which is what
+// lets the migrated rows still line up.
+const SUPABASE_URL = 'https://uwtnwzlruqpseuqnhezi.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3dG53emxydXFwc2V1cW5oZXppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MDEyMjYsImV4cCI6MjA5NTM3NzIyNn0.nJ-g6aHk9kZ94F17NqHsPghoW53VvCxH7oxWuvcWSXk';
+const OWNER_ID = 'ec223936-7f1b-492f-a0f5-21a42b492780';
+const OWNER = { id: OWNER_ID, email: 'Erik', user_metadata: { name: 'Erik' } };
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ════════════════════════════════════════
@@ -158,7 +169,7 @@ function saveNotes(n) { localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(n
 async function loadFromSupabase(userId) {
   try {
     const { data, error } = await sb
-      .from('completed_days')
+      .from('levine_completed_days')
       .select('date_key')
       .eq('user_id', userId);
 
@@ -181,11 +192,11 @@ async function syncToggle(userId, dateKey, isCompleted) {
   try {
     if (isCompleted) {
       await sb
-        .from('completed_days')
+        .from('levine_completed_days')
         .upsert({ user_id: userId, date_key: dateKey }, { onConflict: 'user_id,date_key' });
     } else {
       await sb
-        .from('completed_days')
+        .from('levine_completed_days')
         .delete()
         .eq('user_id', userId)
         .eq('date_key', dateKey);
@@ -204,7 +215,7 @@ async function bulkSync(userId, completed) {
 
     if (rows.length > 0) {
       await sb
-        .from('completed_days')
+        .from('levine_completed_days')
         .upsert(rows, { onConflict: 'user_id,date_key' });
     }
   } catch (err) {
@@ -215,7 +226,7 @@ async function bulkSync(userId, completed) {
 async function loadNotesFromSupabase(userId) {
   try {
     const { data, error } = await sb
-      .from('workout_notes')
+      .from('levine_workout_notes')
       .select('date_key, note_text')
       .eq('user_id', userId);
     if (error) throw error;
@@ -231,11 +242,11 @@ async function loadNotesFromSupabase(userId) {
 async function syncNote(userId, dateKey, noteText) {
   try {
     if (noteText && noteText.trim()) {
-      await sb.from('workout_notes')
+      await sb.from('levine_workout_notes')
         .upsert({ user_id: userId, date_key: dateKey, note_text: noteText, updated_at: new Date().toISOString() },
           { onConflict: 'user_id,date_key' });
     } else {
-      await sb.from('workout_notes')
+      await sb.from('levine_workout_notes')
         .delete().eq('user_id', userId).eq('date_key', dateKey);
     }
   } catch (err) {
@@ -1010,68 +1021,40 @@ function App() {
     });
   }, [user]);
 
-  // Auth state management
+  // Sync. There is no sign-in any more, so the owner is fixed and the only
+  // question is whether the network answers. Local storage stays the source of
+  // truth on load; Supabase is merged on top and then pushed back, which is
+  // what lets the phone and the laptop see the same grid. If the fetch fails
+  // the tracker still works, it just stops syncing.
   useEffect(() => {
-    let subscription = null;
-
     // Safety timeout — never stay on loading screen more than 3 seconds
     const safetyTimer = setTimeout(() => {
       setAuthLoading(false);
     }, 3000);
 
-    const initAuth = async () => {
+    const initSync = async () => {
       try {
-        // Set up auth listener first
-        const { data } = sb.auth.onAuthStateChange(async (event, session) => {
-          try {
-            if (session?.user) {
-              setUser(session.user);
-              const supabaseData = await loadFromSupabase(session.user.id);
-              const supabaseNotes = await loadNotesFromSupabase(session.user.id);
-              const merged = { ...completed, ...supabaseData };
-              const mergedNotes = { ...notes, ...supabaseNotes };
-              setCompleted(merged);
-              setNotes(mergedNotes);
-              saveState(merged);
-              saveNotes(mergedNotes);
-              await bulkSync(session.user.id, merged);
-            } else {
-              setUser(null);
-            }
-          } catch (err) {
-            console.error('Error in auth state change:', err);
-          }
-        });
-        subscription = data?.subscription;
-
-        // Get existing session
-        const { data: { session } } = await sb.auth.getSession();
-        if (session?.user) {
-          setUser(session.user);
-          const supabaseData = await loadFromSupabase(session.user.id);
-          const supabaseNotes = await loadNotesFromSupabase(session.user.id);
-          const merged = { ...completed, ...supabaseData };
-          const mergedNotes = { ...notes, ...supabaseNotes };
-          setCompleted(merged);
-          setNotes(mergedNotes);
-          saveState(merged);
-          saveNotes(mergedNotes);
-          await bulkSync(session.user.id, merged);
-        }
+        setUser(OWNER);
+        const supabaseData = await loadFromSupabase(OWNER_ID);
+        const supabaseNotes = await loadNotesFromSupabase(OWNER_ID);
+        const merged = { ...completed, ...supabaseData };
+        const mergedNotes = { ...notes, ...supabaseNotes };
+        setCompleted(merged);
+        setNotes(mergedNotes);
+        saveState(merged);
+        saveNotes(mergedNotes);
+        await bulkSync(OWNER_ID, merged);
       } catch (err) {
-        console.error('Error initializing auth:', err);
+        console.error('Error initializing sync:', err);
       } finally {
         clearTimeout(safetyTimer);
         setAuthLoading(false);
       }
     };
 
-    initAuth();
+    initSync();
 
-    return () => {
-      clearTimeout(safetyTimer);
-      subscription?.unsubscribe();
-    };
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   const toggle = useCallback((key) => {
@@ -1089,28 +1072,11 @@ function App() {
     });
   }, [user]);
 
-  const handleSignIn = async () => {
-    try {
-      const redirectUrl = window.location.origin + window.location.pathname;
-      await sb.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl
-        }
-      });
-    } catch (err) {
-      console.error('Sign in error:', err);
-    }
-  };
+  // Kept only so the TopBar and StatsView props stay valid. There is nothing to
+  // sign in or out of now, and the owner is always set, so neither ever renders.
+  const handleSignIn = async () => {};
 
-  const handleSignOut = async () => {
-    try {
-      await sb.auth.signOut();
-      setUser(null);
-    } catch (err) {
-      console.error('Sign out error:', err);
-    }
-  };
+  const handleSignOut = async () => {};
 
   // Determine which phase tab to show on load (must be before early return to maintain hook order)
   useEffect(() => {
