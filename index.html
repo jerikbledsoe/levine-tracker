@@ -47,7 +47,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // DATA
 // ════════════════════════════════════════
 
-const START = new Date(2026, 5, 29); // Jun 29, 2026 (Monday) — clean restart, Week 1
+const START = new Date(2026, 7, 31); // Aug 31, 2026 (Monday) — Week 1. Erik had
+// been training about four weeks by then and chose to start the count here
+// anyway, so the grid is the protocol's clock, not a record of every session.
 const STORAGE_KEY = 'levine-tracker-v1';
 const NOTES_STORAGE_KEY = 'levine-notes-v1';
 
